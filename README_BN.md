@@ -26,7 +26,7 @@ PC ও ফোন একই Wi-Fi-তে রাখো। PC-তে ipconfig চ�
 
 ## ফিচার
 
-- বাংলা, English, Hindi, Urdu ও Arabic; Auto detect
+- Faster-Whisper-এর ইনস্টল করা multilingual tokenizer-এর সব ১০০টি সমর্থিত ভাষা; searchable language picker এবং Auto detect
 - Tiny, Base ও Small Whisper মডেল
 - Word-by-word active highlight; Hormozi-inspired, Cyan ও Neon theme
 - H.264/AAC MP4 export, SRT এবং transcript
@@ -38,6 +38,6 @@ Ryzen 5 2400G ও 8 GB RAM-এ Base model দিয়ে শুরু করো; �
 
 Backend একই LAN-এ 0.0.0.0:8000-এ চলে এবং এতে login/token নেই। Router port-forward করে public internet-এ প্রকাশ কোরো না। Backend restart হলে job status memory থেকে মুছে যাবে; completed output backend/data/jobs-এ থাকে। Transcription accuracy audio quality-এর ওপর নির্ভর করে। Burned-in caption ভিডিও থেকে বন্ধ করা যায় না; আলাদা SRT edit করা যাবে।
 
-API: GET /health, POST /jobs, GET /jobs/{job_id}, GET /jobs/{job_id}/stream, GET /jobs/{job_id}/download?kind=video|srt|txt.
+API: GET /health, GET /languages (Whisper-এর পূর্ণ language list), POST /jobs, GET /jobs/{job_id}, GET /jobs/{job_id}/stream, GET /jobs/{job_id}/download?kind=video|srt|txt.
 
 Backend test: backend ফোল্ডারে requirements install করার পর python -m unittest discover -s tests -v চালাও।

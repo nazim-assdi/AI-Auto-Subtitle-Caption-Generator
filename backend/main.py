@@ -13,6 +13,7 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadF
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from faster_whisper import WhisperModel
+from faster_whisper.tokenizer import _LANGUAGE_CODES
 
 from subtitle_utils import STYLE_COLORS, make_ass, make_srt
 
@@ -27,7 +28,29 @@ MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "500"))
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 CPU_THREADS = max(1, min(os.cpu_count() or 4, int(os.getenv("CPU_THREADS", "4"))))
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
-ALLOWED_LANGUAGES = {"auto", "bn", "en", "hi", "ur", "ar"}
+ALLOWED_LANGUAGES = {"auto", *_LANGUAGE_CODES}
+LANGUAGE_NAMES = {
+    "af": "Afrikaans", "am": "Amharic", "ar": "Arabic", "as": "Assamese", "az": "Azerbaijani",
+    "ba": "Bashkir", "be": "Belarusian", "bg": "Bulgarian", "bn": "Bengali", "bo": "Tibetan",
+    "br": "Breton", "bs": "Bosnian", "ca": "Catalan", "cs": "Czech", "cy": "Welsh",
+    "da": "Danish", "de": "German", "el": "Greek", "en": "English", "es": "Spanish",
+    "et": "Estonian", "eu": "Basque", "fa": "Persian", "fi": "Finnish", "fo": "Faroese",
+    "fr": "French", "gl": "Galician", "gu": "Gujarati", "ha": "Hausa", "haw": "Hawaiian",
+    "he": "Hebrew", "hi": "Hindi", "hr": "Croatian", "ht": "Haitian Creole", "hu": "Hungarian",
+    "hy": "Armenian", "id": "Indonesian", "is": "Icelandic", "it": "Italian", "ja": "Japanese",
+    "jw": "Javanese", "ka": "Georgian", "kk": "Kazakh", "km": "Khmer", "kn": "Kannada",
+    "ko": "Korean", "la": "Latin", "lb": "Luxembourgish", "ln": "Lingala", "lo": "Lao",
+    "lt": "Lithuanian", "lv": "Latvian", "mg": "Malagasy", "mi": "Maori", "mk": "Macedonian",
+    "ml": "Malayalam", "mn": "Mongolian", "mr": "Marathi", "ms": "Malay", "mt": "Maltese",
+    "my": "Myanmar", "ne": "Nepali", "nl": "Dutch", "nn": "Norwegian Nynorsk", "no": "Norwegian",
+    "oc": "Occitan", "pa": "Punjabi", "pl": "Polish", "ps": "Pashto", "pt": "Portuguese",
+    "ro": "Romanian", "ru": "Russian", "sa": "Sanskrit", "sd": "Sindhi", "si": "Sinhala",
+    "sk": "Slovak", "sl": "Slovenian", "sn": "Shona", "so": "Somali", "sq": "Albanian",
+    "sr": "Serbian", "su": "Sundanese", "sv": "Swedish", "sw": "Swahili", "ta": "Tamil",
+    "te": "Telugu", "tg": "Tajik", "th": "Thai", "tk": "Turkmen", "tl": "Tagalog",
+    "tr": "Turkish", "tt": "Tatar", "uk": "Ukrainian", "ur": "Urdu", "uz": "Uzbek",
+    "vi": "Vietnamese", "yi": "Yiddish", "yo": "Yoruba", "zh": "Chinese", "yue": "Cantonese",
+}
 ALLOWED_MODELS = {"tiny", "base", "small"}
 
 app = FastAPI(title="AI Auto Subtitle Generator API", version="1.0.0")
@@ -209,6 +232,17 @@ def health() -> dict[str, Any]:
     }
 
 
+@app.get("/languages")
+def supported_languages() -> dict[str, Any]:
+    """Return the complete language list supported by the installed multilingual Whisper tokenizer."""
+    languages = [{"code": "auto", "name": "Auto detect"}]
+    languages.extend(
+        {"code": code, "name": LANGUAGE_NAMES.get(code, code.upper())}
+        for code in _LANGUAGE_CODES
+    )
+    return {"count": len(_LANGUAGE_CODES), "languages": languages}
+
+
 @app.post("/jobs", status_code=202)
 async def create_job(
     background_tasks: BackgroundTasks,
@@ -222,6 +256,7 @@ async def create_job(
     extension = Path(file.filename).suffix.lower()
     if extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail="MP4, MOV, MKV, WEBM, AVI বা M4V ভিডিও আপলোড করো।")
+    language = language.strip().lower()
     if language not in ALLOWED_LANGUAGES:
         raise HTTPException(status_code=400, detail="নির্বাচিত ভাষা সমর্থিত নয়।")
     if model_size not in ALLOWED_MODELS:

@@ -2,7 +2,7 @@
 
 Local-first AI video captioning for Android and Windows. Flutter uploads a video to a Python FastAPI backend running on the PC; Faster-Whisper transcribes speech and FFmpeg burns animated word-highlight captions into an MP4.
 
-- Bengali, English, Hindi, Urdu and Arabic; automatic language detection
+- All 100 language codes exposed by the installed multilingual Whisper tokenizer; searchable language picker and automatic language detection
 - Word-level timing and active-word highlight
 - Hormozi-inspired yellow, cyan and neon caption themes
 - MP4 with burned-in captions, separate SRT and transcript downloads

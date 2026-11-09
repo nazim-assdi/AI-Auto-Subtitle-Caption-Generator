@@ -25,7 +25,7 @@ class SubtitleHelpersTest(unittest.TestCase):
         self.assertEqual(srt_time(3661.25), "01:01:01,250")
 
     def test_ass_text_escaping(self):
-        self.assertEqual(escape_ass_text(r"{name}\\path"), r"\\{name\\}\\\\path")
+        self.assertEqual(escape_ass_text(r"{name}\\path"), r"\{name\}\\\\path")
 
     def test_word_timestamps_and_phrase_split(self):
         words = collect_word_items([self.segment])

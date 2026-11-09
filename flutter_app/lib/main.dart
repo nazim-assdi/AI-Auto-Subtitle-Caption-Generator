@@ -60,6 +60,9 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   PlatformFile? _selectedFile;
   int? _selectedFileSize;
   String _language = 'auto';
+  List<Map<String, String>> _availableLanguages = const [
+    {'code': 'auto', 'name': 'Auto detect'},
+  ];
   String _model = 'base';
   String _style = 'hormozi';
   bool _busy = false;
@@ -98,10 +101,31 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       if (response.statusCode != 200) throw Exception('সার্ভার উত্তর দেয়নি (${response.statusCode})');
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final ready = data['ffmpeg_ready'] == true;
+      final languageResponse = await http.get(_uri('/languages')).timeout(const Duration(seconds: 8));
+      if (languageResponse.statusCode != 200) {
+        throw Exception('সমর্থিত ভাষার তালিকা পাওয়া যায়নি (${languageResponse.statusCode})');
+      }
+      final languageData = _decodeJson(languageResponse.body);
+      final rawLanguages = languageData['languages'] as List<dynamic>? ?? const [];
+      final available = rawLanguages
+          .whereType<Map<String, dynamic>>()
+          .map((item) => <String, String>{
+                'code': item['code']?.toString() ?? '',
+                'name': item['name']?.toString() ?? item['code']?.toString() ?? '',
+              })
+          .where((item) => item['code']!.isNotEmpty)
+          .toList();
+      if (!available.any((item) => item['code'] == 'auto')) {
+        available.insert(0, {'code': 'auto', 'name': 'Auto detect'});
+      }
       if (!mounted) return;
       setState(() {
         _serverOkay = ready;
-        _stage = ready ? 'সার্ভার সংযুক্ত এবং FFmpeg প্রস্তুত।' : 'সার্ভার চালু, কিন্তু FFmpeg পাওয়া যায়নি।';
+        _availableLanguages = available;
+        if (!available.any((item) => item['code'] == _language)) _language = 'auto';
+        _stage = ready
+            ? 'সার্ভার সংযুক্ত • ${languageData['count'] ?? available.length - 1}টি ভাষা উপলব্ধ।'
+            : 'সার্ভার চালু, কিন্তু FFmpeg পাওয়া যায়নি।';
       });
     } catch (e) {
       if (!mounted) return;
@@ -471,18 +495,21 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
                     padding: const EdgeInsets.all(16),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       _sectionTitle('৩. Caption সেটিংস', 'ভাষা, AI মডেল ও ভিডিওর caption style বেছে নাও।'),
-                      _dropdown<String>(
-                        label: 'ভাষা',
-                        value: _language,
-                        values: const [
-                          DropdownMenuItem(value: 'auto', child: Text('Auto detect')),
-                          DropdownMenuItem(value: 'bn', child: Text('বাংলা')),
-                          DropdownMenuItem(value: 'en', child: Text('English')),
-                          DropdownMenuItem(value: 'hi', child: Text('Hindi')),
-                          DropdownMenuItem(value: 'ur', child: Text('Urdu')),
-                          DropdownMenuItem(value: 'ar', child: Text('Arabic')),
-                        ],
-                        onChanged: (value) => setState(() => _language = value ?? 'auto'),
+                      DropdownMenu<String>(
+                        initialSelection: _language,
+                        enableFilter: true,
+                        enableSearch: true,
+                        requestFocusOnTap: true,
+                        expandedInsets: EdgeInsets.zero,
+                        label: const Text('ভাষা — লিখে খুঁজুন'),
+                        leadingIcon: const Icon(Icons.language),
+                        dropdownMenuEntries: _availableLanguages
+                            .map((item) => DropdownMenuEntry<String>(
+                                  value: item['code']!,
+                                  label: '${item['name']} (${item['code']})',
+                                ))
+                            .toList(),
+                        onSelected: _busy ? null : (value) => setState(() => _language = value ?? 'auto'),
                       ),
                       const SizedBox(height: 12),
                       _dropdown<String>(
@@ -614,7 +641,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
           const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('Turn speech into captions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
             SizedBox(height: 5),
-            Text('বাংলা ও English • Word highlight • Burned-in MP4', style: TextStyle(fontSize: 12, color: Colors.white70)),
+            Text('Whisper-এর সব সমর্থিত ভাষা • Auto Detect • Burned-in MP4', style: TextStyle(fontSize: 12, color: Colors.white70)),
           ])),
         ]),
       );
@@ -625,7 +652,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     required List<DropdownMenuItem<T>> values,
     required ValueChanged<T?> onChanged,
   }) => DropdownButtonFormField<T>(
-        value: value,
+        initialValue: value,
         isExpanded: true,
         decoration: InputDecoration(labelText: label),
         items: values,
