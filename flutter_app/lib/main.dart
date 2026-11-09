@@ -210,7 +210,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       // Never upload a large video until the local FastAPI server and FFmpeg are ready.
       final healthResponse = await http.get(_uri('/health')).timeout(const Duration(seconds: 10));
       if (healthResponse.statusCode != 200) {
-        throw Exception('Backend health check ব্যর্থ হয়েছে (' + healthResponse.statusCode.toString() + ')।');
+        throw Exception('Backend health check ব্যর্থ হয়েছে (${healthResponse.statusCode})।');
       }
       final health = _decodeJson(healthResponse.body);
       if (health['ok'] != true) {
@@ -398,8 +398,6 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     }
   }
 
-  Future<void> _saveSrt() => _saveExport('srt');
-
   Future<void> _saveExport(String kind) async {
     final id = _jobId;
     if (id == null) return;
@@ -473,13 +471,6 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     };
     return types[kind];
   }
-
-  Widget _exportButton(String label, String kind, IconData icon) =>
-      OutlinedButton.icon(
-        onPressed: _busy ? null : () => _saveExport(kind),
-        icon: Icon(icon, size: 17),
-        label: Text(label),
-      );
 
   Future<void> _translateSubtitles() async {
     final id = _jobId;
@@ -668,11 +659,11 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   String _friendlyError(Object error) {
     var message = error.toString().replaceFirst('Exception: ', '').trim();
     if (_isConnectionFailure(error)) {
-      return 'Backend চালু নেই অথবা এই URL/port-এ সংযোগ গ্রহণ করছে না: ' + _baseUrl +
-          '\n\nWindows: repository-এর backend\\start_backend.bat চালাও এবং Terminal খোলা রাখো। প্রথমবার হলে আগে backend\\install_backend.bat চালাতে হবে। তারপর Test চাপো।' +
+      return 'Backend চালু নেই অথবা এই URL/port-এ সংযোগ গ্রহণ করছে না: $_baseUrl'
+          '\n\nWindows: repository-এর backend\\start_backend.bat চালাও এবং Terminal খোলা রাখো। প্রথমবার হলে আগে backend\\install_backend.bat চালাতে হবে। তারপর Test চাপো।'
           '\nAndroid: PC ও ফোন একই Wi-Fi-তে রাখো এবং Backend URL-এ PC-এর LAN IP দাও (যেমন http://192.168.0.105:8000)।';
     }
-    if (message.length > 700) message = message.substring(0, 700) + '...';
+    if (message.length > 700) message = '${message.substring(0, 700)}...';
     return message;
   }
 
@@ -686,16 +677,6 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
-
-  Widget _sectionTitle(String title, String subtitle) => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 3),
-          Text(subtitle, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.white60)),
-        ]),
-      );
-
 
   @override
   Widget build(BuildContext context) {
@@ -819,7 +800,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     _buildTopBar(desktop: desktop),
     Expanded(child: IndexedStack(index: _activePage, children: [
       _buildDashboardPage(),
-      _buildCreatePage(desktop: desktop),
+      _buildCreatePage(),
       _buildExportPage(),
       _buildSettingsPage(),
     ])),
@@ -890,7 +871,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
         const SizedBox(height: 4),
         Text(subtitle, style: const TextStyle(fontSize: 11, color: Color(0xFF8D9BB2), height: 1.4)),
       ])),
-      if (trailing != null) trailing,
+      ?trailing,
     ],
   );
 
@@ -1057,7 +1038,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   Widget _workflowStep(String number, String title, String description, IconData icon) => SizedBox(
     width: 220,
     child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Container(width: 35, height: 35, decoration: BoxDecoration(color: const Color(0xFF27254C), borderRadius: BorderRadius.circular(10)), child: Center(child: Text(number, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFFC1B9FF)))),
+      Container(width: 35, height: 35, decoration: BoxDecoration(color: const Color(0xFF27254C), borderRadius: BorderRadius.circular(10)), child: Center(child: Text(number, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFFC1B9FF))))),
       const SizedBox(width: 10),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Icon(icon, size: 17, color: const Color(0xFF9A90FF)),
@@ -1069,7 +1050,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     ]),
   );
 
-  Widget _buildCreatePage({required bool desktop}) => _pageFrame(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+  Widget _buildCreatePage() => _pageFrame(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     _sectionHeading('New video project', 'Choose your source footage, then configure AI captions before rendering.'),
     const SizedBox(height: 17),
     LayoutBuilder(builder: (context, constraints) {
@@ -1165,13 +1146,23 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     )),
     const SizedBox(height: 12),
     Row(children: [
-      Expanded(child: _dropdown<int>(label: 'Words per line', value: _wordsPerLine, values: List.generate(7, (i) => DropdownMenuItem(value: i + 2, child: Text('${i + 2} words')), onChanged: (value) => setState(() => _wordsPerLine = value ?? 4))),
+      Expanded(child: _dropdown<int>(
+        label: 'Words per line',
+        value: _wordsPerLine,
+        values: List.generate(7, (i) => DropdownMenuItem(value: i + 2, child: Text('${i + 2} words'))),
+        onChanged: (value) => setState(() => _wordsPerLine = value ?? 4),
+      )),
       const SizedBox(width: 10),
-      Expanded(child: _dropdown<String>(label: 'Caption position', value: _position, values: const [
-        DropdownMenuItem(value: 'bottom', child: Text('Bottom safe zone')),
-        DropdownMenuItem(value: 'top', child: Text('Top safe zone')),
-        DropdownMenuItem(value: 'middle', child: Text('Middle')),
-      ], onChanged: (value) => setState(() => _position = value ?? 'bottom'))),
+      Expanded(child: _dropdown<String>(
+        label: 'Caption position',
+        value: _position,
+        values: const [
+          DropdownMenuItem(value: 'bottom', child: Text('Bottom safe zone')),
+          DropdownMenuItem(value: 'top', child: Text('Top safe zone')),
+          DropdownMenuItem(value: 'middle', child: Text('Middle')),
+        ],
+        onChanged: (value) => setState(() => _position = value ?? 'bottom'),
+      )),
     ]),
     const SizedBox(height: 14),
     SizedBox(width: double.infinity, child: FilledButton.icon(
@@ -1194,7 +1185,15 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     if (_detectedLanguage != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text('Detected language: $_detectedLanguage', style: const TextStyle(fontSize: 10, color: Color(0xFF8E9DB4)))),
     if (_error != null) ...[
       const SizedBox(height: 12),
-      Container(padding: const EdgeInsets.all(11), decoration: BoxDecoration(color: const Color(0xFF3B202C), borderRadius: BorderRadius.circular(11), border: Border.all(color: const Color(0xFF693747))), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [const Icon(Icons.error_outline_rounded, color: Color(0xFFFF8997), size: 18), const SizedBox(width: 9), Expanded(child: Text(_error!, style: const TextStyle(fontSize: 11, color: Color(0xFFFFB4BE), height: 1.5))))])),
+      Container(
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(color: const Color(0xFF3B202C), borderRadius: BorderRadius.circular(11), border: Border.all(color: const Color(0xFF693747))),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Icon(Icons.error_outline_rounded, color: Color(0xFFFF8997), size: 18),
+          const SizedBox(width: 9),
+          Expanded(child: Text(_error!, style: const TextStyle(fontSize: 11, color: Color(0xFFFFB4BE), height: 1.5))),
+        ]),
+      ),
     ],
     if (_jobId != null && !_busy && _error == null) ...[
       const SizedBox(height: 12),
@@ -1409,28 +1408,6 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(value, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
           Text(label, style: const TextStyle(color: Colors.white60, fontSize: 10)),
-        ]),
-      );
-
-  Widget _buildHero() => Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(22),
-          gradient: const LinearGradient(colors: [Color(0xFF302B63), Color(0xFF24243E), Color(0xFF0F0C29)]),
-        ),
-        child: Row(children: [
-          Container(
-            width: 58,
-            height: 58,
-            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(17)),
-            child: const Icon(Icons.closed_caption, size: 34, color: Colors.white),
-          ),
-          const SizedBox(width: 14),
-          const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Turn speech into captions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-            SizedBox(height: 5),
-            Text('Whisper-এর সব সমর্থিত ভাষা • Auto Detect • Burned-in MP4', style: TextStyle(fontSize: 12, color: Colors.white70)),
-          ])),
         ]),
       );
 
