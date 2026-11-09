@@ -1051,7 +1051,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
         const SizedBox(height: 5),
         Text(subtitle, style: const TextStyle(fontSize: 10, color: Color(0xFF92A1B8), height: 1.45)),
       ])),
-      if (trailing != null) trailing,
+      ?trailing,
     ],
   );
 
