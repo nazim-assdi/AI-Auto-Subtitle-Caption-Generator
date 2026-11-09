@@ -8,6 +8,6 @@ Local-first AI video captioning for Android and Windows. Flutter uploads a video
 - MP4 with burned-in captions, separate SRT and transcript downloads
 - Live progress, preview and Android/Windows export
 
-Start with [Bangla instructions](README_BN.md) or the [English guide](README_EN.md).
+See [Product Vision](PRODUCT_VISION.md) for the design direction. Start with [Bangla instructions](README_BN.md) or the [English guide](README_EN.md).
 
 Backend: Python 3.11/3.12, FastAPI, Faster-Whisper, FFmpeg. Client: Flutter 3.38+, Android and Windows.

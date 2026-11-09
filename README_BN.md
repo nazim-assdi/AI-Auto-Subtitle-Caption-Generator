@@ -10,6 +10,16 @@
 4. এরপর start_backend.bat চালু রাখো। প্রথমবার Whisper Base model ডাউনলোড হবে।
 5. Browser-এ http://127.0.0.1:8000/health খুলে ffmpeg_ready true আছে কি না দেখো।
 
+## Offline Translation Model (ঐচ্ছিক)
+
+Backend ফোল্ডারে একবার optional offline translation engine install করতে পারো। উদাহরণ:
+
+```bat
+install_translation_model.bat en bn
+```
+
+এখানে `en` হলো source language এবং `bn` হলো target language। অন্য ভাষার জন্য তাদের code ব্যবহার করো। সব ১০০টি speech-recognition language-এর Argos translation package নেই। কোন model install আছে তা `http://127.0.0.1:8000/translation/status` থেকে দেখা যাবে। একবার model install হলে অনুবাদ PC-তেই হবে।
+
 ## APK ও EXE Build
 
 Flutter 3.38 বা নতুন stable version, Android Studio/Android SDK এবং Windows EXE-এর জন্য Visual Studio 2022 Desktop development with C++ লাগবে। flutter_app ফোল্ডারে build_all.bat চালাও।
@@ -24,12 +34,14 @@ Windows portable ফোল্ডারের সব DLL ও data ফাইল �
 
 PC ও ফোন একই Wi-Fi-তে রাখো। PC-তে ipconfig চালিয়ে Wi-Fi IPv4 address দেখো। অ্যাপে Backend URL হিসেবে http://PC-IP:8000 দাও, যেমন http://192.168.0.105:8000। Test চাপো। Windows অ্যাপে default URL http://127.0.0.1:8000। Firewall বাধা দিলে Private network-এ TCP 8000 allow করো।
 
-## ফিচার
+## Creator Studio ফিচার
 
 - Faster-Whisper-এর ইনস্টল করা multilingual tokenizer-এর সব ১০০টি সমর্থিত ভাষা; searchable language picker এবং Auto detect
 - Tiny, Base ও Small Whisper মডেল
 - Word-by-word active highlight; Hormozi-inspired, Cyan ও Neon theme
-- H.264/AAC MP4 export, SRT এবং transcript
+- Editable transcript, Creator Vocabulary Boost, Creator Pulse report (pace, pause, filler-word hints, review words, hook suggestions)
+- H.264/AAC MP4, SRT, VTT, ASS, TXT, Project JSON এবং Creator Report export
+- Optional offline translated SRT/VTT ও bilingual SRT (Argos model install থাকলে)
 - Progress, preview, Android Gallery ও Windows save
 
 ## PC সেটিংস ও সীমাবদ্ধতা

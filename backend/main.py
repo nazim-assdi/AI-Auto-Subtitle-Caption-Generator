@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import threading
 import uuid
 from pathlib import Path
+from statistics import mean
+from types import SimpleNamespace
 from typing import Any, Optional
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
@@ -14,8 +17,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from faster_whisper import WhisperModel
 from faster_whisper.tokenizer import _LANGUAGE_CODES
+from pydantic import BaseModel, Field
 
-from subtitle_utils import STYLE_COLORS, make_ass, make_srt
+try:
+    import argostranslate.package as argos_package
+    import argostranslate.translate as argos_translate
+except ImportError:
+    argos_package = None
+    argos_translate = None
+
+from subtitle_utils import STYLE_COLORS, collect_word_items, make_ass, make_srt, make_vtt
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -29,6 +40,14 @@ MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 CPU_THREADS = max(1, min(os.cpu_count() or 4, int(os.getenv("CPU_THREADS", "4"))))
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
 ALLOWED_LANGUAGES = {"auto", *_LANGUAGE_CODES}
+ALLOWED_MODELS = {"tiny", "base", "small"}
+FILLER_WORDS = {
+    "en": {"uh", "um", "erm", "hmm", "you know", "i mean", "basically", "actually"},
+    "bn": {"মানে", "উম", "আসলে", "এইযে", "তো", "হ্যাঁ মানে"},
+    "hi": {"मतलब", "उम", "आह", "यानी"},
+    "es": {"eh", "este", "pues", "o sea"},
+    "fr": {"euh", "bah", "ben", "en fait"},
+}
 LANGUAGE_NAMES = {
     "af": "Afrikaans", "am": "Amharic", "ar": "Arabic", "as": "Assamese", "az": "Azerbaijani",
     "ba": "Bashkir", "be": "Belarusian", "bg": "Bulgarian", "bn": "Bengali", "bo": "Tibetan",
@@ -51,14 +70,13 @@ LANGUAGE_NAMES = {
     "tr": "Turkish", "tt": "Tatar", "uk": "Ukrainian", "ur": "Urdu", "uz": "Uzbek",
     "vi": "Vietnamese", "yi": "Yiddish", "yo": "Yoruba", "zh": "Chinese", "yue": "Cantonese",
 }
-ALLOWED_MODELS = {"tiny", "base", "small"}
 
-app = FastAPI(title="AI Auto Subtitle Generator API", version="1.0.0")
+app = FastAPI(title="AI Auto Subtitle Generator API", version="2.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -69,14 +87,32 @@ loaded_model: Optional[WhisperModel] = None
 loaded_model_size: Optional[str] = None
 
 
+class TranscriptUpdate(BaseModel):
+    texts: list[str] = Field(min_length=1, max_length=5000)
+    style: str | None = None
+    words_per_line: int | None = Field(default=None, ge=2, le=8)
+    position: str | None = None
+
+
+class TranslationRequest(BaseModel):
+    target_language: str = Field(min_length=2, max_length=16)
+
+
 def update_job(job_id: str, **changes: Any) -> None:
     with jobs_lock:
         if job_id in jobs:
             jobs[job_id].update(changes)
 
 
+def get_job(job_id: str) -> dict[str, Any]:
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="কাজটি পাওয়া যায়নি। Backend restart হলে পুরোনো job status আর নাও থাকতে পারে।")
+        return dict(job)
+
+
 def get_model(model_size: str) -> WhisperModel:
-    """Keep only one model in memory to avoid exhausting low-RAM PCs."""
     global loaded_model, loaded_model_size
     if loaded_model is not None and loaded_model_size == model_size:
         return loaded_model
@@ -85,12 +121,8 @@ def get_model(model_size: str) -> WhisperModel:
             loaded_model = None
             loaded_model_size = None
             loaded_model = WhisperModel(
-                model_size,
-                device="cpu",
-                compute_type="int8",
-                cpu_threads=CPU_THREADS,
-                num_workers=1,
-                download_root=str(MODEL_DIR),
+                model_size, device="cpu", compute_type="int8",
+                cpu_threads=CPU_THREADS, num_workers=1, download_root=str(MODEL_DIR),
             )
             loaded_model_size = model_size
     return loaded_model
@@ -99,13 +131,8 @@ def get_model(model_size: str) -> WhisperModel:
 def run_command(command: list[str], cwd: Optional[Path] = None) -> subprocess.CompletedProcess[str]:
     try:
         result = subprocess.run(
-            command,
-            cwd=str(cwd) if cwd else None,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
+            command, cwd=str(cwd) if cwd else None, capture_output=True,
+            text=True, encoding="utf-8", errors="replace", check=False,
         )
     except FileNotFoundError as exc:
         raise RuntimeError("FFmpeg পাওয়া যায়নি। Windows-এ FFmpeg install করে PATH-এ যোগ করো।") from exc
@@ -117,115 +144,269 @@ def run_command(command: list[str], cwd: Optional[Path] = None) -> subprocess.Co
 
 def probe_video(ffprobe: str, input_path: Path) -> tuple[int, int]:
     result = run_command([
-        ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
-        "-of", "json", input_path.name,
+        ffprobe, "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=width,height", "-of", "json", input_path.name,
     ], cwd=input_path.parent)
-    data = json.loads(result.stdout or "{}")
-    streams = data.get("streams") or []
+    streams = json.loads(result.stdout or "{}").get("streams") or []
     if not streams:
         raise RuntimeError("ভিডিও ফাইলের video stream পাওয়া যায়নি।")
     return int(streams[0].get("width", 1080)), int(streams[0].get("height", 1920))
 
 
-def process_job(job_id: str, input_path: Path, model_size: str, language: str, style: str) -> None:
-    job_dir = input_path.parent
-    audio_path = job_dir / "speech.wav"
+def serialize_segments(segments: list[Any]) -> list[dict[str, Any]]:
+    data = []
+    for segment in segments:
+        words = []
+        for word in getattr(segment, "words", None) or []:
+            words.append({
+                "text": getattr(word, "word", ""),
+                "start": float(word.start),
+                "end": float(word.end),
+                "probability": float(getattr(word, "probability", 0.0) or 0.0),
+            })
+        data.append({
+            "id": int(getattr(segment, "id", len(data))),
+            "start": float(segment.start),
+            "end": float(segment.end),
+            "text": (getattr(segment, "text", "") or "").strip(),
+            "avg_logprob": float(getattr(segment, "avg_logprob", 0.0) or 0.0),
+            "no_speech_prob": float(getattr(segment, "no_speech_prob", 0.0) or 0.0),
+            "words": words,
+        })
+    return data
+
+
+def hydrate_segments(data: list[dict[str, Any]]) -> list[SimpleNamespace]:
+    segments = []
+    for item in data:
+        words = [
+            SimpleNamespace(
+                word=word["text"], start=float(word["start"]), end=float(word["end"]),
+                probability=float(word.get("probability", 0.0)),
+            )
+            for word in item.get("words", [])
+        ]
+        segments.append(SimpleNamespace(
+            id=int(item.get("id", len(segments))),
+            start=float(item["start"]), end=float(item["end"]),
+            text=str(item.get("text", "")), words=words,
+            avg_logprob=float(item.get("avg_logprob", 0.0)),
+            no_speech_prob=float(item.get("no_speech_prob", 0.0)),
+        ))
+    return segments
+
+
+def build_insights(segment_data: list[dict[str, Any]], language: str) -> dict[str, Any]:
+    words = []
+    for item in segment_data:
+        words.extend(re.findall(r"\S+", item.get("text", "")))
+    total_words = len(words)
+    start = min((float(x["start"]) for x in segment_data), default=0.0)
+    end = max((float(x["end"]) for x in segment_data), default=0.0)
+    duration = max(0.0, end - start)
+    spoken = sum(max(0.0, min(float(x["end"]), end) - max(float(x["start"]), start)) for x in segment_data)
+    wpm = round(total_words / (spoken / 60.0), 1) if spoken > 0 else 0.0
+    pauses = []
+    ordered = sorted(segment_data, key=lambda x: float(x["start"]))
+    for previous, current in zip(ordered, ordered[1:]):
+        gap = float(current["start"]) - float(previous["end"])
+        if gap >= 1.2:
+            pauses.append({"start": round(float(previous["end"]), 2), "end": round(float(current["start"]), 2), "seconds": round(gap, 2)})
+    probabilities = [
+        float(word.get("probability", 0.0))
+        for item in segment_data for word in item.get("words", [])
+        if word.get("probability") is not None
+    ]
+    low_words = [
+        {"text": word.get("text", "").strip(), "start": round(float(word["start"]), 2), "probability": round(float(word.get("probability", 0.0)), 3)}
+        for item in segment_data for word in item.get("words", [])
+        if word.get("probability") is not None and float(word.get("probability", 0.0)) < 0.45
+    ]
+    filler_set = FILLER_WORDS.get(language, set())
+    normalized = [word.lower().strip(".,!?;:()[]{}\"'“”‘’") for word in words]
+    normalized_text = " ".join(normalized)
+    filler_counts = {
+        filler: (normalized_text.count(filler) if " " in filler else normalized.count(filler))
+        for filler in sorted(filler_set)
+        if (normalized_text.count(filler) if " " in filler else normalized.count(filler))
+    }
+    hook_candidates = []
+    for item in segment_data:
+        text = item.get("text", "").strip()
+        if not text:
+            continue
+        score = 0
+        if "?" in text or "？" in text or "।" in text:
+            score += 1
+        if "!" in text or "！" in text:
+            score += 1
+        if 5 <= len(text.split()) <= 18:
+            score += 1
+        if score >= 2:
+            hook_candidates.append({
+                "start": round(float(item["start"]), 2),
+                "end": round(float(item["end"]), 2),
+                "text": text,
+                "reason": "কৌতূহল/জোরালো বাক্য — creator review suggestion",
+                "heuristic_score": score,
+            })
+    return {
+        "word_count": total_words,
+        "duration_seconds": round(duration, 2),
+        "speaking_rate_wpm": wpm,
+        "pause_count_over_1_2s": len(pauses),
+        "long_pauses": pauses[:100],
+        "filler_word_counts": filler_counts,
+        "word_alignment_probability_mean": round(mean(probabilities), 3) if probabilities else None,
+        "low_alignment_probability_words": low_words[:200],
+        "hook_moment_suggestions": hook_candidates[:20],
+        "notes": [
+            "Word probability is an alignment signal, not proof that a word is correct.",
+            "Hook suggestions are simple heuristics; review the video before publishing.",
+            "Filler-word detection is language-specific and intentionally conservative.",
+        ],
+    }
+
+
+def write_project_exports(job_dir: Path, segment_data: list[dict[str, Any]], style: str, words_per_line: int, position: str, language: str = "auto") -> dict[str, Any]:
+    segments = hydrate_segments(segment_data)
+    width, height = probe_video(shutil.which("ffprobe") or "ffprobe", next(job_dir.glob("source.*")))
     ass_path = job_dir / "captions.ass"
-    srt_path = job_dir / "captions.srt"
-    transcript_path = job_dir / "transcript.txt"
-    output_path = job_dir / "captioned_video.mp4"
+    make_ass(segments, width, height, style, ass_path, words_per_line=words_per_line, position=position)
+    make_srt(segments, job_dir / "captions.srt")
+    make_vtt(segments, job_dir / "captions.vtt")
+    (job_dir / "transcript.txt").write_text(
+        "\n".join((item.get("text", "") or "").strip() for item in segment_data).strip() + "\n",
+        encoding="utf-8-sig",
+    )
+    (job_dir / "transcript.json").write_text(
+        json.dumps({"segments": segment_data}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    insights = build_insights(segment_data, language)
+    (job_dir / "creator_report.json").write_text(
+        json.dumps(insights, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return insights
+
+
+def render_video(job_id: str, source_path: Path, job_dir: Path, style: str) -> int:
     ffmpeg = shutil.which("ffmpeg")
-    ffprobe = shutil.which("ffprobe")
+    if not ffmpeg:
+        raise RuntimeError("FFmpeg পাওয়া যায়নি।")
+    temp_output = job_dir / "captioned_video.next.mp4"
+    run_command([
+        ffmpeg, "-y", "-i", source_path.name, "-vf", "ass=captions.ass:shaping=complex",
+        "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "veryfast",
+        "-crf", "23", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+faststart", temp_output.name,
+    ], cwd=job_dir)
+    if not temp_output.exists() or temp_output.stat().st_size == 0:
+        raise RuntimeError("FFmpeg output video তৈরি করতে পারেনি।")
+    final_output = job_dir / "captioned_video.mp4"
+    temp_output.replace(final_output)
+    return final_output.stat().st_size
 
+
+def process_job(job_id: str, source_path: Path, model_size: str, language: str, style: str, hotwords: str, words_per_line: int, position: str) -> None:
+    job_dir = source_path.parent
+    audio_path = job_dir / "speech.wav"
     try:
-        if not ffmpeg or not ffprobe:
-            raise RuntimeError("FFmpeg/FFprobe ইনস্টল নেই। FFmpeg install করে Windows PATH-এ যোগ করে আবার চালাও।")
-
+        if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+            raise RuntimeError("FFmpeg/FFprobe ইনস্টল নেই। FFmpeg install করে PATH-এ যোগ করো।")
         update_job(job_id, status="processing", progress=8, stage="ভিডিও থেকে অডিও প্রস্তুত করা হচ্ছে")
         run_command([
-            ffmpeg, "-y", "-i", input_path.name, "-vn", "-ac", "1", "-ar", "16000",
-            "-c:a", "pcm_s16le", audio_path.name,
+            shutil.which("ffmpeg") or "ffmpeg", "-y", "-i", source_path.name, "-vn",
+            "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", audio_path.name,
         ], cwd=job_dir)
-
         update_job(job_id, progress=20, stage="AI দিয়ে কথা শনাক্ত করা হচ্ছে (Whisper)")
-        # Serialise inference to protect the CPU/RAM on entry-level PCs.
         with model_lock:
             model = get_model(model_size)
-            segments_iter, info = model.transcribe(
-                str(audio_path),
-                language=None if language == "auto" else language,
-                word_timestamps=True,
-                vad_filter=True,
-                beam_size=3,
-                condition_on_previous_text=False,
-            )
-            segments = []
+            transcribe_args: dict[str, Any] = {
+                "language": None if language == "auto" else language,
+                "word_timestamps": True,
+                "vad_filter": True,
+                "beam_size": 3,
+                "condition_on_previous_text": False,
+            }
+            if hotwords.strip():
+                transcribe_args["hotwords"] = hotwords.strip()
+            segments_iter, info = model.transcribe(str(audio_path), **transcribe_args)
+            raw_segments = []
             duration = float(getattr(info, "duration", 0.0) or 0.0)
             for segment in segments_iter:
-                segments.append(segment)
+                raw_segments.append(segment)
                 if duration > 0:
                     fraction = min(1.0, float(getattr(segment, "end", 0.0)) / duration)
                     update_job(job_id, progress=20 + int(fraction * 36), stage="AI দিয়ে কথা শনাক্ত করা হচ্ছে (Whisper)")
-
-        if not segments:
+        if not raw_segments:
             raise RuntimeError("ভিডিওতে শনাক্ত করার মতো কোনো কথা পাওয়া যায়নি। অন্য ভিডিও দিয়ে চেষ্টা করো।")
-
-        update_job(job_id, progress=58, stage="শব্দের টাইমস্ট্যাম্প ও সাবটাইটেল তৈরি হচ্ছে")
-        width, height = probe_video(ffprobe, input_path)
-        make_ass(segments, width, height, style, ass_path)
-        make_srt(segments, srt_path)
-        transcript = "\n".join((getattr(segment, "text", "") or "").strip() for segment in segments).strip()
-        transcript_path.write_text(transcript + "\n", encoding="utf-8-sig")
-
+        segment_data = serialize_segments(raw_segments)
+        (job_dir / "segments.json").write_text(json.dumps(segment_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        update_job(job_id, progress=60, stage="Transcript ও Creator Pulse report তৈরি হচ্ছে")
+        insights = write_project_exports(job_dir, segment_data, style, words_per_line, position, getattr(info, "language", "auto"))
+        transcript = "\n".join(item["text"] for item in segment_data).strip()
         update_job(
             job_id,
-            progress=68,
-            stage="ভিডিওতে রঙিন word-by-word caption বসানো হচ্ছে",
+            progress=70,
+            stage="ভিডিওতে animated word-by-word captions render হচ্ছে",
             detected_language=getattr(info, "language", None),
             language_probability=round(float(getattr(info, "language_probability", 0.0) or 0.0), 3),
             transcript_preview=transcript[:500],
+            insights_summary={
+                "word_count": insights["word_count"],
+                "speaking_rate_wpm": insights["speaking_rate_wpm"],
+                "pause_count_over_1_2s": insights["pause_count_over_1_2s"],
+                "low_alignment_probability_count": len(insights["low_alignment_probability_words"]),
+            },
         )
-        # ASS file is referenced by relative name, avoiding Windows drive-letter escaping bugs.
-        run_command([
-            ffmpeg, "-y", "-i", input_path.name, "-vf", "ass=captions.ass:shaping=complex",
-            "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "veryfast",
-            "-crf", "23", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
-            "-movflags", "+faststart", output_path.name,
-        ], cwd=job_dir)
-
-        if not output_path.exists() or output_path.stat().st_size == 0:
-            raise RuntimeError("FFmpeg output video তৈরি করতে পারেনি।")
-
-        update_job(
-            job_id,
-            status="completed",
-            progress=100,
-            stage="সম্পন্ন",
-            output_size=output_path.stat().st_size,
-            detected_language=getattr(info, "language", None),
-        )
+        output_size = render_video(job_id, source_path, job_dir, style)
+        update_job(job_id, status="completed", progress=100, stage="সম্পন্ন — transcript edit ও export করা যাবে", output_size=output_size)
     except Exception as exc:
         update_job(job_id, status="failed", progress=0, stage="সমস্যা হয়েছে", error=str(exc)[-5000:])
-        for path in (output_path, srt_path, transcript_path):
+        for filename in ("captioned_video.mp4", "captioned_video.next.mp4", "captions.srt", "captions.vtt", "captions.ass"):
             try:
-                if path.exists():
-                    path.unlink()
+                (job_dir / filename).unlink(missing_ok=True)
             except OSError:
                 pass
     finally:
-        for path in (input_path, audio_path, ass_path):
-            try:
-                if path.exists():
-                    path.unlink()
-            except OSError:
-                pass
+        try:
+            audio_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def rerender_job(job_id: str, style: str, words_per_line: int, position: str) -> None:
+    job = get_job(job_id)
+    job_dir = Path(job["job_dir"])
+    source_path = Path(job["source_path"])
+    try:
+        update_job(job_id, status="rendering", progress=76, stage="Edited transcript দিয়ে video পুনরায় render হচ্ছে")
+        segment_data = json.loads((job_dir / "segments.json").read_text(encoding="utf-8"))
+        insights = write_project_exports(job_dir, segment_data, style, words_per_line, position, job.get("detected_language", "auto") or "auto")
+        output_size = render_video(job_id, source_path, job_dir, style)
+        update_job(
+            job_id, status="completed", progress=100, stage="নতুন caption-সহ render সম্পন্ন",
+            style=style, words_per_line=words_per_line, position=position,
+            output_size=output_size,
+            insights_summary={
+                "word_count": insights["word_count"],
+                "speaking_rate_wpm": insights["speaking_rate_wpm"],
+                "pause_count_over_1_2s": insights["pause_count_over_1_2s"],
+                "low_alignment_probability_count": len(insights["low_alignment_probability_words"]),
+            },
+        )
+    except Exception as exc:
+        update_job(job_id, status="failed", progress=0, stage="Re-render ব্যর্থ", error=str(exc)[-5000:])
 
 
 @app.get("/health")
 def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "service": "AI Auto Subtitle Generator",
+        "service": "AI Auto Subtitle Creator Studio",
+        "version": app.version,
         "ffmpeg_ready": bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
         "max_upload_mb": MAX_UPLOAD_MB,
         "default_model": "base",
@@ -234,13 +415,50 @@ def health() -> dict[str, Any]:
 
 @app.get("/languages")
 def supported_languages() -> dict[str, Any]:
-    """Return the complete language list supported by the installed multilingual Whisper tokenizer."""
     languages = [{"code": "auto", "name": "Auto detect"}]
-    languages.extend(
-        {"code": code, "name": LANGUAGE_NAMES.get(code, code.upper())}
-        for code in _LANGUAGE_CODES
-    )
+    languages.extend({"code": code, "name": LANGUAGE_NAMES.get(code, code.upper())} for code in _LANGUAGE_CODES)
     return {"count": len(_LANGUAGE_CODES), "languages": languages}
+
+
+@app.get("/translation/status")
+def translation_status() -> dict[str, Any]:
+    if argos_translate is None or argos_package is None:
+        return {"enabled": False, "installed_languages": [], "installed_pairs": [], "message": "ঐচ্ছিক offline translation engine install করা হয়নি।"}
+    languages = argos_translate.get_installed_languages()
+    packages = argos_package.get_installed_packages()
+    return {
+        "enabled": True,
+        "installed_languages": [{"code": language.code, "name": language.name} for language in languages],
+        "installed_pairs": [{"from": package.from_code, "to": package.to_code} for package in packages],
+        "message": "Install করা language models দিয়ে offline translation চালু।",
+    }
+
+
+@app.get("/jobs/{job_id}/translation-options")
+def translation_options(job_id: str) -> dict[str, Any]:
+    job = get_job(job_id)
+    if job.get("status") != "completed":
+        raise HTTPException(status_code=409, detail="প্রথমে transcription সম্পন্ন হতে হবে।")
+    source_code = str(job.get("detected_language") or "").lower()
+    if not source_code or source_code == "auto":
+        return {"enabled": False, "source_language": source_code, "targets": []}
+    if argos_translate is None:
+        return {"enabled": False, "source_language": source_code, "targets": []}
+    installed = {language.code: language for language in argos_translate.get_installed_languages()}
+    source = installed.get(source_code)
+    if source is None:
+        return {"enabled": False, "source_language": source_code, "targets": []}
+    targets = []
+    for code, target in installed.items():
+        if code == source_code:
+            continue
+        try:
+            translation = source.get_translation(target)
+        except Exception:
+            translation = None
+        if translation is not None:
+            targets.append({"code": code, "name": LANGUAGE_NAMES.get(code, target.name)})
+    return {"enabled": bool(targets), "source_language": source_code, "targets": targets}
 
 
 @app.post("/jobs", status_code=202)
@@ -250,6 +468,9 @@ async def create_job(
     language: str = Form("auto"),
     style: str = Form("hormozi"),
     model_size: str = Form("base"),
+    hotwords: str = Form(""),
+    words_per_line: int = Form(4),
+    position: str = Form("bottom"),
 ) -> dict[str, Any]:
     if not file.filename:
         raise HTTPException(status_code=400, detail="ফাইলের নাম পাওয়া যায়নি।")
@@ -262,15 +483,21 @@ async def create_job(
     if model_size not in ALLOWED_MODELS:
         raise HTTPException(status_code=400, detail="tiny, base অথবা small মডেল নির্বাচন করো।")
     if style not in STYLE_COLORS:
-        raise HTTPException(status_code=400, detail="hormozi, clean অথবা neon caption style নির্বাচন করো।")
+        raise HTTPException(status_code=400, detail="অজানা caption theme।")
+    if not 2 <= words_per_line <= 8:
+        raise HTTPException(status_code=400, detail="এক লাইনে ২ থেকে ৮টি শব্দ বেছে নাও।")
+    if position not in {"bottom", "top", "middle"}:
+        raise HTTPException(status_code=400, detail="Caption position bottom, top অথবা middle হতে পারে।")
+    if len(hotwords) > 1000:
+        raise HTTPException(status_code=400, detail="Vocabulary boost সর্বোচ্চ ১০০০ অক্ষর।")
 
     job_id = uuid.uuid4().hex
     job_dir = JOBS_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
-    input_path = job_dir / f"input{extension}"
+    source_path = job_dir / f"source{extension}"
     copied = 0
     try:
-        with input_path.open("wb") as destination:
+        with source_path.open("wb") as destination:
             while True:
                 chunk = await file.read(1024 * 1024)
                 if not chunk:
@@ -284,55 +511,168 @@ async def create_job(
         raise
     finally:
         await file.close()
-
     if copied == 0:
         shutil.rmtree(job_dir, ignore_errors=True)
         raise HTTPException(status_code=400, detail="খালি ভিডিও ফাইল আপলোড করা যাবে না।")
 
     with jobs_lock:
         jobs[job_id] = {
-            "job_id": job_id,
-            "status": "queued",
-            "progress": 2,
-            "stage": "কাজের সারিতে যোগ হয়েছে",
-            "error": None,
-            "created_file": file.filename,
-            "detected_language": None,
-            "output_size": 0,
-            "job_dir": str(job_dir),
+            "job_id": job_id, "status": "queued", "progress": 2,
+            "stage": "কাজের সারিতে যোগ হয়েছে", "error": None,
+            "created_file": file.filename, "detected_language": None, "output_size": 0,
+            "job_dir": str(job_dir), "source_path": str(source_path),
+            "style": style, "words_per_line": words_per_line, "position": position,
         }
-    background_tasks.add_task(process_job, job_id, input_path, model_size, language, style)
-    return {"job_id": job_id, "status": "queued", "message": "ভিডিও প্রসেসিং শুরু হয়েছে।"}
+    background_tasks.add_task(process_job, job_id, source_path, model_size, language, style, hotwords, words_per_line, position)
+    return {"job_id": job_id, "status": "queued", "message": "AI transcript generation শুরু হয়েছে।"}
 
 
 @app.get("/jobs/{job_id}")
 def job_status(job_id: str) -> dict[str, Any]:
-    with jobs_lock:
-        job = jobs.get(job_id)
-        if not job:
-            raise HTTPException(status_code=404, detail="এই কাজটি পাওয়া যায়নি। সার্ভার restart হলে পুরোনো job তালিকা মুছে যেতে পারে।")
-        return {key: value for key, value in job.items() if key != "job_dir"}
+    job = get_job(job_id)
+    return {key: value for key, value in job.items() if key not in {"job_dir", "source_path"}}
+
+
+@app.get("/jobs/{job_id}/transcript")
+def get_transcript(job_id: str) -> dict[str, Any]:
+    job = get_job(job_id)
+    if job.get("status") != "completed":
+        raise HTTPException(status_code=409, detail="প্রথমে transcription ও rendering সম্পন্ন হতে হবে।")
+    path = Path(job["job_dir"]) / "segments.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Transcript পাওয়া যায়নি।")
+    segments = json.loads(path.read_text(encoding="utf-8"))
+    return {"segments": [{"id": x["id"], "start": x["start"], "end": x["end"], "text": x["text"]} for x in segments]}
+
+
+@app.put("/jobs/{job_id}/transcript", status_code=202)
+def update_transcript(job_id: str, payload: TranscriptUpdate, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    job = get_job(job_id)
+    if job.get("status") != "completed":
+        raise HTTPException(status_code=409, detail="এই job এখন edit করা যাবে না।")
+    job_dir = Path(job["job_dir"])
+    source_path = Path(job["source_path"])
+    if not source_path.exists():
+        raise HTTPException(status_code=404, detail="Original video পাওয়া যায়নি। Job delete হয়েছে কি না দেখো।")
+    data_path = job_dir / "segments.json"
+    segment_data = json.loads(data_path.read_text(encoding="utf-8"))
+    if len(payload.texts) != len(segment_data):
+        raise HTTPException(status_code=400, detail=f"Transcript line সংখ্যা বদলানো যাবে না; ঠিক {len(segment_data)}টি line পাঠাও।")
+    for item, new_text in zip(segment_data, payload.texts):
+        clean = new_text.strip().replace("\n", " ")
+        if len(clean) > 1000:
+            raise HTTPException(status_code=400, detail="প্রতিটি caption line সর্বোচ্চ ১০০০ অক্ষরের হতে পারে।")
+        if clean != item["text"]:
+            item["text"] = clean
+            # Rebuild a changed cue's word timing proportionally from the edited text.
+            item["words"] = []
+    style = payload.style or job.get("style", "hormozi")
+    if style not in STYLE_COLORS:
+        raise HTTPException(status_code=400, detail="অজানা caption theme।")
+    words_per_line = payload.words_per_line or int(job.get("words_per_line", 4))
+    position = payload.position or job.get("position", "bottom")
+    if not 2 <= words_per_line <= 8 or position not in {"bottom", "top", "middle"}:
+        raise HTTPException(status_code=400, detail="Caption layout settings সঠিক নয়।")
+    data_path.write_text(json.dumps(segment_data, ensure_ascii=False, indent=2), encoding="utf-8")
+    update_job(job_id, status="rendering", progress=76, stage="Edited transcript save হয়েছে; re-render শুরু")
+    background_tasks.add_task(rerender_job, job_id, style, words_per_line, position)
+    return {"job_id": job_id, "status": "rendering", "message": "Edited captions render হচ্ছে।"}
+
+
+@app.get("/jobs/{job_id}/insights")
+def job_insights(job_id: str) -> dict[str, Any]:
+    job = get_job(job_id)
+    if job.get("status") != "completed":
+        raise HTTPException(status_code=409, detail="প্রথমে processing সম্পন্ন হতে হবে।")
+    path = Path(job["job_dir"]) / "creator_report.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Creator report পাওয়া যায়নি।")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+@app.post("/jobs/{job_id}/translate", status_code=201)
+def translate_job(job_id: str, payload: TranslationRequest) -> dict[str, Any]:
+    if argos_translate is None:
+        raise HTTPException(status_code=503, detail="Offline translation engine নেই। backend/install_translation_model.bat চালিয়ে Argos engine ও প্রয়োজনীয় language pair install করো।")
+    job = get_job(job_id)
+    if job.get("status") != "completed":
+        raise HTTPException(status_code=409, detail="প্রথমে transcription ও rendering সম্পন্ন হতে হবে।")
+    source_code = str(job.get("detected_language") or "").lower()
+    target_code = payload.target_language.strip().lower()
+    if not source_code or source_code == "auto":
+        raise HTTPException(status_code=400, detail="Source language শনাক্ত হয়নি; নির্দিষ্ট language নির্বাচন করে আবার transcription করো।")
+    if source_code == target_code:
+        raise HTTPException(status_code=400, detail="Source ও target language একই।")
+    installed = {language.code: language for language in argos_translate.get_installed_languages()}
+    source = installed.get(source_code)
+    target = installed.get(target_code)
+    if source is None or target is None:
+        raise HTTPException(status_code=409, detail=f"Argos-এ {source_code} → {target_code} language model install নেই। install_translation_model.bat দিয়ে প্রয়োজনীয় pair install করো।")
+    translator = source.get_translation(target)
+    if translator is None:
+        raise HTTPException(status_code=409, detail=f"{source_code} → {target_code} translation path install করা নেই।")
+
+    job_dir = Path(job["job_dir"])
+    source_data = json.loads((job_dir / "segments.json").read_text(encoding="utf-8"))
+    translated_data = []
+    for item in source_data:
+        translated_data.append({
+            "id": item["id"],
+            "start": float(item["start"]),
+            "end": float(item["end"]),
+            "text": translator.translate(item.get("text", "")) if item.get("text", "").strip() else "",
+        })
+    translated_segments = hydrate_segments(translated_data)
+    make_srt(translated_segments, job_dir / "translated.srt")
+    make_vtt(translated_segments, job_dir / "translated.vtt")
+    bilingual = []
+    for index, (original, translated) in enumerate(zip(source_data, translated_data), start=1):
+        original_text = original.get("text", "").strip()
+        translated_text = translated.get("text", "").strip()
+        if original_text or translated_text:
+            bilingual.append(
+                f"{index}\n{srt_time(float(original['start']))} --> {srt_time(float(original['end']))}\n{original_text}\n{translated_text}"
+            )
+    (job_dir / "bilingual.srt").write_text("\ufeff" + "\n\n".join(bilingual) + ("\n" if bilingual else ""), encoding="utf-8")
+    (job_dir / "translation.json").write_text(
+        json.dumps({"source_language": source_code, "target_language": target_code, "segments": translated_data}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    update_job(job_id, translation_target=target_code)
+    return {
+        "job_id": job_id,
+        "source_language": source_code,
+        "target_language": target_code,
+        "segments": len(translated_data),
+        "exports": ["translated.srt", "translated.vtt", "bilingual.srt", "translation.json"],
+    }
 
 
 def output_file(job_id: str, kind: str) -> tuple[Path, str, str]:
-    with jobs_lock:
-        job = jobs.get(job_id)
-        if not job:
-            raise HTTPException(status_code=404, detail="কাজটি পাওয়া যায়নি।")
-        if job.get("status") != "completed":
-            raise HTTPException(status_code=409, detail="ভিডিও প্রসেসিং এখনো সম্পন্ন হয়নি।")
-        job_dir = Path(job["job_dir"])
+    job = get_job(job_id)
+    if job.get("status") != "completed":
+        raise HTTPException(status_code=409, detail="কাজটি এখনো সম্পন্ন হয়নি।")
+    job_dir = Path(job["job_dir"])
     choices = {
-        "video": (job_dir / "captioned_video.mp4", "video/mp4", "captioned_video.mp4"),
-        "srt": (job_dir / "captions.srt", "application/x-subrip", "captions.srt"),
-        "txt": (job_dir / "transcript.txt", "text/plain; charset=utf-8", "transcript.txt"),
+        "video": ("captioned_video.mp4", "video/mp4", "captioned_video.mp4"),
+        "srt": ("captions.srt", "application/x-subrip", "captions.srt"),
+        "vtt": ("captions.vtt", "text/vtt", "captions.vtt"),
+        "ass": ("captions.ass", "text/plain", "captions.ass"),
+        "txt": ("transcript.txt", "text/plain; charset=utf-8", "transcript.txt"),
+        "json": ("transcript.json", "application/json", "transcript.json"),
+        "insights": ("creator_report.json", "application/json", "creator_report.json"),
+        "translated-srt": ("translated.srt", "application/x-subrip", "translated.srt"),
+        "translated-vtt": ("translated.vtt", "text/vtt", "translated.vtt"),
+        "bilingual-srt": ("bilingual.srt", "application/x-subrip", "bilingual.srt"),
+        "translation-json": ("translation.json", "application/json", "translation.json"),
     }
     if kind not in choices:
-        raise HTTPException(status_code=400, detail="kind অবশ্যই video, srt অথবা txt হতে হবে।")
-    path, media_type, filename = choices[kind]
+        raise HTTPException(status_code=400, detail="kind: video, srt, vtt, ass, txt, json, insights, translated-srt, translated-vtt, bilingual-srt বা translation-json হতে পারে।")
+    filename, media_type, download_name = choices[kind]
+    path = job_dir / filename
     if not path.exists():
-        raise HTTPException(status_code=404, detail="ফলাফলের ফাইল পাওয়া যায়নি।")
-    return path, media_type, filename
+        raise HTTPException(status_code=404, detail="ফাইলটি পাওয়া যায়নি।")
+    return path, media_type, download_name
 
 
 @app.get("/jobs/{job_id}/stream")
@@ -345,3 +685,14 @@ def stream_video(job_id: str) -> FileResponse:
 def download_output(job_id: str, kind: str = "video") -> FileResponse:
     path, media_type, filename = output_file(job_id, kind)
     return FileResponse(path, media_type=media_type, filename=filename)
+
+
+@app.delete("/jobs/{job_id}", status_code=200)
+def delete_job(job_id: str) -> dict[str, Any]:
+    job = get_job(job_id)
+    if job.get("status") in {"processing", "rendering", "queued"}:
+        raise HTTPException(status_code=409, detail="চলমান job delete করা যাবে না।")
+    shutil.rmtree(Path(job["job_dir"]), ignore_errors=False)
+    with jobs_lock:
+        jobs.pop(job_id, None)
+    return {"ok": True, "deleted": job_id}

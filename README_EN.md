@@ -6,6 +6,8 @@ Features: All 100 language codes exposed by the installed multilingual Whisper t
 
 Backend setup: install Python 3.11/3.12 and FFmpeg/FFprobe, run backend/install_backend.bat, then backend/start_backend.bat. Open http://127.0.0.1:8000/health to check readiness. The first run downloads the selected Whisper model.
 
+Optional offline translation: from `backend/`, run `install_translation_model.bat en bn` to install an English-to-Bengali Argos model route (replace the language codes as required). Once installed, subtitle translation runs locally. Not every Whisper recognition language has an Argos translation package; see `GET /translation/status` for installed pairs.
+
 Build: install Flutter 3.38+, Android SDK/licenses and Visual Studio 2022 Desktop development with C++ for Windows. Run flutter_app/build_all.bat. APK is written to flutter_app/build/app/outputs/flutter-apk/app-release.apk. Windows portable files are in flutter_app/dist/Windows_Portable/; keep the whole folder together.
 
 Android connection: connect PC and phone to the same Wi-Fi, find the PC Wi-Fi IPv4 address with ipconfig, then set the app URL to http://PC-IP:8000. Windows defaults to http://127.0.0.1:8000.

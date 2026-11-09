@@ -65,6 +65,11 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   ];
   String _model = 'base';
   String _style = 'hormozi';
+  String _position = 'bottom';
+  int _wordsPerLine = 4;
+  late final TextEditingController _hotwordsController;
+  Map<String, dynamic>? _insights;
+  String? _translationTarget;
   bool _busy = false;
   bool _serverOkay = false;
   double _progress = 0;
@@ -84,11 +89,13 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     _serverController = TextEditingController(
       text: Platform.isAndroid ? 'http://10.0.2.2:8000' : 'http://127.0.0.1:8000',
     );
+    _hotwordsController = TextEditingController();
   }
 
   @override
   void dispose() {
     _serverController.dispose();
+    _hotwordsController.dispose();
     _player?.dispose();
     super.dispose();
   }
@@ -190,6 +197,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       _jobId = null;
       _transcriptPreview = null;
       _detectedLanguage = null;
+      _insights = null;
     });
     await _disposePreview();
 
@@ -198,6 +206,9 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       request.fields['language'] = _language;
       request.fields['model_size'] = _model;
       request.fields['style'] = _style;
+      request.fields['hotwords'] = _hotwordsController.text.trim();
+      request.fields['words_per_line'] = _wordsPerLine.toString();
+      request.fields['position'] = _position;
       request.files.add(await http.MultipartFile.fromPath('file', picked.path!, filename: picked.name));
 
       final streamed = await request.send().timeout(const Duration(hours: 4));
@@ -256,6 +267,12 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
         });
       }
       if (status == 'completed') {
+        try {
+          final insightsResponse = await http.get(_uri('/jobs/$id/insights')).timeout(const Duration(seconds: 30));
+          if (insightsResponse.statusCode == 200 && mounted) {
+            setState(() => _insights = _decodeJson(insightsResponse.body));
+          }
+        } catch (_) {}
         try {
           await _loadPreview(id);
         } catch (_) {
@@ -347,22 +364,197 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     }
   }
 
-  Future<void> _saveSrt() async {
+  Future<void> _saveSrt() => _saveExport('srt');
+
+  Future<void> _saveExport(String kind) async {
     final id = _jobId;
     if (id == null) return;
     try {
-      final response = await http.get(_uri('/jobs/$id/download?kind=srt')).timeout(const Duration(minutes: 2));
-      if (response.statusCode != 200) throw Exception('SRT ফাইল পাওয়া যায়নি।');
+      final response = await http.get(_uri('/jobs/$id/download?kind=$kind')).timeout(const Duration(minutes: 2));
+      if (response.statusCode != 200) throw Exception('$kind ফাইল পাওয়া যায়নি।');
       await FileSaver.instance.saveToDownloads(
-        name: 'captions_${DateTime.now().millisecondsSinceEpoch}',
+        name: '${kind}_${DateTime.now().millisecondsSinceEpoch}',
         bytes: response.bodyBytes,
-        fileExtension: 'srt',
-        mimeType: MimeType.text,
+        fileExtension: _exportExtension(kind),
+        mimeType: _exportMimeType(kind),
         subfolder: 'AI Captions',
       );
-      if (mounted) setState(() => _stage = 'SRT সাবটাইটেল ফাইল সেভ হয়েছে।');
+      if (mounted) setState(() => _stage = '$kind export সেভ হয়েছে.');
     } catch (e) {
-      _showError('SRT সেভ করা যায়নি: ${_friendlyError(e)}');
+      _showError('$kind export সেভ করা যায়নি: ${_friendlyError(e)}');
+    }
+  }
+
+  String _exportExtension(String kind) {
+    if (kind == 'insights' || kind == 'json' || kind == 'translation-json') return 'json';
+    if (kind == 'translated-srt' || kind == 'bilingual-srt') return 'srt';
+    if (kind == 'translated-vtt') return 'vtt';
+    return kind;
+  }
+
+  MimeType _exportMimeType(String kind) =>
+      kind == 'insights' || kind == 'json' || kind == 'translation-json' ? MimeType.json : MimeType.text;
+
+  Future<void> _translateSubtitles() async {
+    final id = _jobId;
+    if (id == null || _busy) return;
+    final optionsResponse = await http.get(_uri('/jobs/$id/translation-options')).timeout(const Duration(seconds: 30));
+    final options = _decodeJson(optionsResponse.body);
+    final targetsRaw = options['targets'] as List<dynamic>? ?? const [];
+    final targets = targetsRaw
+        .whereType<Map<String, dynamic>>()
+        .map((item) => <String, String>{
+              'code': item['code']?.toString() ?? '',
+              'name': item['name']?.toString() ?? item['code']?.toString() ?? '',
+            })
+        .where((item) => item['code']!.isNotEmpty)
+        .toList();
+    if (optionsResponse.statusCode != 200 || targets.isEmpty) {
+      final sourceCode = options['source_language']?.toString() ?? _detectedLanguage ?? 'unknown';
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Offline translation model install করো'),
+          content: Text('এই PC-তে $sourceCode থেকে অন্য ভাষায় যাওয়ার কোনো offline translation path পাওয়া যায়নি। Backend-এর install_translation_model.bat চালাও।\\n\\nউদাহরণ: install_translation_model.bat $sourceCode bn\\n\\nসব Whisper ভাষার translation model পাওয়া যায় না; install করার পর Server Test চাপো।'),
+          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('ঠিক আছে'))],
+        ),
+      );
+      return;
+    }
+    var selected = targets.first['code']!;
+    final target = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, dialogSetState) => AlertDialog(
+          title: const Text('Offline Subtitle Translation'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text('Source: ${options['source_language']}', style: const TextStyle(color: Colors.white60)),
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              initialValue: selected,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Available target languages'),
+              items: targets.map((item) => DropdownMenuItem(
+                value: item['code'],
+                child: Text('${item['name']} (${item['code']})'),
+              )).toList(),
+              onChanged: (value) => dialogSetState(() => selected = value ?? selected),
+            ),
+            const SizedBox(height: 8),
+            const Text('শুধু install করা translation model দিয়ে কাজ হবে; video cloud-এ পাঠানো হবে না।',
+                style: TextStyle(fontSize: 11, color: Colors.white60)),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, selected), child: const Text('Translate')),
+          ],
+        ),
+      ),
+    );
+    if (target == null) return;
+    setState(() {
+      _busy = true;
+      _stage = 'Offline translation হচ্ছে...';
+      _error = null;
+    });
+    try {
+      final response = await http.post(
+        _uri('/jobs/$id/translate'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'target_language': target}),
+      ).timeout(const Duration(hours: 2));
+      final result = _decodeJson(response.body);
+      if (response.statusCode != 201) {
+        throw Exception(_detailFrom(result, 'Offline translation ব্যর্থ হয়েছে।'));
+      }
+      if (mounted) {
+        setState(() {
+          _translationTarget = target;
+          _stage = 'Offline translation সম্পন্ন: ${options['source_language']} → $target';
+        });
+      }
+    } catch (e) {
+      _showError(_friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _editTranscript() async {
+    final id = _jobId;
+    if (id == null || _busy) return;
+    try {
+      final response = await http.get(_uri('/jobs/$id/transcript')).timeout(const Duration(seconds: 30));
+      final data = _decodeJson(response.body);
+      if (response.statusCode != 200) {
+        throw Exception(_detailFrom(data, 'Transcript পাওয়া যায়নি।'));
+      }
+      final segments = data['segments'] as List<dynamic>? ?? const [];
+      final controller = TextEditingController(
+        text: segments.map((item) => (item as Map<String, dynamic>)['text']?.toString() ?? '').join('\n'),
+      );
+      final edited = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Transcript Editor'),
+          content: SizedBox(
+            width: 620,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Text('প্রতিটি লাইনের text ঠিক করো। নতুন line যোগ/বাদ দিও না—প্রতিটি line-এর timing সংরক্ষিত থাকবে।',
+                  style: TextStyle(fontSize: 12, color: Colors.white70)),
+              const SizedBox(height: 12),
+              Flexible(
+                child: TextField(
+                  controller: controller,
+                  autofocus: true,
+                  minLines: 8,
+                  maxLines: 18,
+                  keyboardType: TextInputType.multiline,
+                  decoration: const InputDecoration(hintText: 'প্রতি subtitle segment আলাদা লাইনে'),
+                ),
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text), child: const Text('Save & Render')),
+          ],
+        ),
+      );
+      controller.dispose();
+      if (edited == null) return;
+      final texts = edited.split(RegExp(r'\r?\n'));
+      setState(() {
+        _busy = true;
+        _progress = 0.76;
+        _stage = 'Edited transcript পাঠানো হচ্ছে...';
+        _error = null;
+      });
+      await _disposePreview();
+      final update = await http.put(
+        _uri('/jobs/$id/transcript'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'texts': texts,
+          'style': _style,
+          'words_per_line': _wordsPerLine,
+          'position': _position,
+        }),
+      ).timeout(const Duration(minutes: 2));
+      final updateData = _decodeJson(update.body);
+      if (update.statusCode != 202) {
+        throw Exception(_detailFrom(updateData, 'Transcript update ব্যর্থ হয়েছে।'));
+      }
+      await _pollJob(id);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = _friendlyError(e);
+          _stage = 'Transcript edit ব্যর্থ হয়েছে';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -530,12 +722,45 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
                         label: 'Caption style',
                         value: _style,
                         values: const [
-                          DropdownMenuItem(value: 'hormozi', child: Text('Hormozi — White + Yellow highlight')),
-                          DropdownMenuItem(value: 'clean', child: Text('Clean — White + Cyan highlight')),
-                          DropdownMenuItem(value: 'neon', child: Text('Neon — White + Pink highlight')),
+                          DropdownMenuItem(value: 'hormozi', child: Text('Hormozi — Yellow word highlight')),
+                          DropdownMenuItem(value: 'clean', child: Text('Clean — Cyan highlight')),
+                          DropdownMenuItem(value: 'neon', child: Text('Neon — Purple highlight')),
+                          DropdownMenuItem(value: 'creator', child: Text('Creator — Mint highlight')),
+                          DropdownMenuItem(value: 'cinema', child: Text('Cinema — Blue highlight')),
+                          DropdownMenuItem(value: 'minimal', child: Text('Minimal — White subtitle')),
                         ],
                         onChanged: (value) => setState(() => _style = value ?? 'hormozi'),
                       ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _hotwordsController,
+                        maxLength: 1000,
+                        decoration: const InputDecoration(
+                          labelText: 'Creator Vocabulary Boost',
+                          hintText: 'যেমন: Nazim, OpenAI, Flutter, QuickBooks',
+                          prefixIcon: Icon(Icons.auto_fix_high),
+                          helperText: 'নাম, brand, technical term বা কঠিন শব্দ comma দিয়ে লেখো।',
+                        ),
+                      ),
+                      Row(children: [
+                        Expanded(child: _dropdown<int>(
+                          label: 'এক লাইনে শব্দ',
+                          value: _wordsPerLine,
+                          values: List.generate(7, (i) => DropdownMenuItem(value: i + 2, child: Text('${i + 2} words'))),
+                          onChanged: (value) => setState(() => _wordsPerLine = value ?? 4),
+                        )),
+                        const SizedBox(width: 10),
+                        Expanded(child: _dropdown<String>(
+                          label: 'Caption position',
+                          value: _position,
+                          values: const [
+                            DropdownMenuItem(value: 'bottom', child: Text('Bottom safe zone')),
+                            DropdownMenuItem(value: 'top', child: Text('Top safe zone')),
+                            DropdownMenuItem(value: 'middle', child: Text('Middle')),
+                          ],
+                          onChanged: (value) => setState(() => _position = value ?? 'bottom'),
+                        )),
+                      ]),
                     ]),
                   ),
                 ),
@@ -604,6 +829,41 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
                           FilledButton.icon(onPressed: _saveVideo, icon: const Icon(Icons.download), label: const Text('ভিডিও Save')),
                         ]),
                       ],
+                      Wrap(spacing: 8, runSpacing: 8, children: [
+                        OutlinedButton.icon(onPressed: _editTranscript, icon: const Icon(Icons.edit_note), label: const Text('Edit Transcript')),
+                        OutlinedButton.icon(onPressed: _translateSubtitles, icon: const Icon(Icons.translate), label: const Text('Offline Translate')),
+                        OutlinedButton.icon(onPressed: () => _saveExport('vtt'), icon: const Icon(Icons.subtitles), label: const Text('VTT')),
+                        OutlinedButton.icon(onPressed: () => _saveExport('ass'), icon: const Icon(Icons.style), label: const Text('ASS')),
+                        OutlinedButton.icon(onPressed: () => _saveExport('json'), icon: const Icon(Icons.data_object), label: const Text('Project JSON')),
+                        OutlinedButton.icon(onPressed: () => _saveExport('insights'), icon: const Icon(Icons.insights), label: const Text('Creator Report')),
+                      ]),
+                      if (_translationTarget != null) ...[
+                        const SizedBox(height: 8),
+                        Text('Translated to $_translationTarget', style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.w700)),
+                        Wrap(spacing: 8, runSpacing: 8, children: [
+                          OutlinedButton(onPressed: () => _saveExport('translated-srt'), child: const Text('Translated SRT')),
+                          OutlinedButton(onPressed: () => _saveExport('translated-vtt'), child: const Text('Translated VTT')),
+                          OutlinedButton(onPressed: () => _saveExport('bilingual-srt'), child: const Text('Bilingual SRT')),
+                          OutlinedButton(onPressed: () => _saveExport('translation-json'), child: const Text('Translation JSON')),
+                        ]),
+                      ],
+                      if (_insights != null) ...[
+                        const Divider(height: 20),
+                        const Text('Creator Pulse', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                        const SizedBox(height: 8),
+                        Wrap(spacing: 8, runSpacing: 8, children: [
+                          _metricChip('Words', '${_insights!['word_count'] ?? 0}'),
+                          _metricChip('Pace', '${_insights!['speaking_rate_wpm'] ?? 0} WPM'),
+                          _metricChip('Long pauses', '${_insights!['pause_count_over_1_2s'] ?? 0}'),
+                          _metricChip('Review words', '${(_insights!['low_alignment_probability_words'] as List<dynamic>? ?? const []).length}'),
+                        ]),
+                        const SizedBox(height: 10),
+                        _buildInsightList('Review these words', _insights!['low_alignment_probability_words'], 'text', 'start'),
+                        _buildInsightList('Possible hook moments', _insights!['hook_moment_suggestions'], 'text', 'start'),
+                        const SizedBox(height: 8),
+                        const Text('Creator suggestions are heuristic. Check the original audio before publishing.',
+                            style: TextStyle(fontSize: 11, color: Colors.white54)),
+                      ],
                       if (_transcriptPreview != null && _transcriptPreview!.isNotEmpty) ...[
                         const Divider(height: 20),
                         const Text('Transcript preview', style: TextStyle(fontWeight: FontWeight.w700)),
@@ -623,6 +883,34 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       ),
     );
   }
+
+  Widget _buildInsightList(String title, dynamic rawItems, String textKey, String timeKey) {
+    final items = rawItems is List ? rawItems.whereType<Map<String, dynamic>>().toList() : <Map<String, dynamic>>[];
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 4),
+        ...items.take(6).map((item) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('${item[timeKey] ?? 0}s  ', style: const TextStyle(color: Colors.amberAccent, fontSize: 11)),
+            Expanded(child: Text(item[textKey]?.toString() ?? '', style: const TextStyle(color: Colors.white70, fontSize: 12))),
+          ]),
+        )),
+      ]),
+    );
+  }
+
+  Widget _metricChip(String label, String value) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+        decoration: BoxDecoration(color: const Color(0xFF262A3A), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white12)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+          Text(label, style: const TextStyle(color: Colors.white60, fontSize: 10)),
+        ]),
+      );
 
   Widget _buildHero() => Container(
         padding: const EdgeInsets.all(20),
