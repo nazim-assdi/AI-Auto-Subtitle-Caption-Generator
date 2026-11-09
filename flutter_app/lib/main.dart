@@ -398,7 +398,14 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   Future<void> _translateSubtitles() async {
     final id = _jobId;
     if (id == null || _busy) return;
-    final optionsResponse = await http.get(_uri('/jobs/$id/translation-options')).timeout(const Duration(seconds: 30));
+    late http.Response optionsResponse;
+    try {
+      optionsResponse = await http.get(_uri('/jobs/$id/translation-options')).timeout(const Duration(seconds: 30));
+    } catch (e) {
+      _showError('Translation options পাওয়া যায়নি: ${_friendlyError(e)}');
+      return;
+    }
+    if (!mounted) return;
     final options = _decodeJson(optionsResponse.body);
     final targetsRaw = options['targets'] as List<dynamic>? ?? const [];
     final targets = targetsRaw
@@ -415,12 +422,13 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('Offline translation model install করো'),
-          content: Text('এই PC-তে $sourceCode থেকে অন্য ভাষায় যাওয়ার কোনো offline translation path পাওয়া যায়নি। Backend-এর install_translation_model.bat চালাও।\\n\\nউদাহরণ: install_translation_model.bat $sourceCode bn\\n\\nসব Whisper ভাষার translation model পাওয়া যায় না; install করার পর Server Test চাপো।'),
+          content: Text('এই PC-তে $sourceCode থেকে অন্য ভাষায় যাওয়ার কোনো offline translation path পাওয়া যায়নি। Backend-এর install_translation_model.bat চালাও।\n\nউদাহরণ: install_translation_model.bat $sourceCode bn\n\nসব Whisper ভাষার translation model পাওয়া যায় না; install করার পর Server Test চাপো।'),
           actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('ঠিক আছে'))],
         ),
       );
       return;
     }
+    if (!mounted) return;
     var selected = targets.first['code']!;
     final target = await showDialog<String>(
       context: context,
