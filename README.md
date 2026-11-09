@@ -9,6 +9,10 @@ Local-first AI video captioning for Android and Windows. Flutter uploads a video
 - MP4 with burned-in captions, separate SRT and transcript downloads
 - Live progress, preview and Android/Windows export
 
+## Creator Studio Dashboard
+
+Responsive professional dashboard with Overview, New Project, Export Center and Settings workspaces. Desktop uses a sidebar; Android uses bottom navigation.
+
 ## Windows launch
 
 After first-time backend setup and Windows build, double-click launch_windows.bat from the repository root. It starts/checks the backend and opens the Windows app only after /health confirms FFmpeg and ASS subtitle rendering are ready.

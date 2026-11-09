@@ -43,6 +43,15 @@ Windows portable ফোল্ডারের সব DLL ও data ফাইল �
 
 PC ও ফোন একই Wi-Fi-তে রাখো। PC-তে ipconfig চালিয়ে Wi-Fi IPv4 address দেখো। অ্যাপে Backend URL হিসেবে http://PC-IP:8000 দাও, যেমন http://192.168.0.105:8000। Test চাপো। Windows অ্যাপে default URL http://127.0.0.1:8000। Firewall বাধা দিলে Private network-এ TCP 8000 allow করো।
 
+## Professional Creator Studio Dashboard
+
+- Desktop-এ professional left sidebar; Android/ছোট screen-এ bottom navigation
+- চারটি আলাদা workspace: Overview, New Project, Export Center, Settings
+- Overview dashboard-এ project status, language/AI status cards, recent project ও quick actions
+- New Project-এ video source এবং caption settings আলাদা panel-এ
+- Export Center-এ video preview, file downloads এবং Creator Pulse এক জায়গায়
+- Settings-এ backend connection ও local AI runtime information
+
 ## Creator Studio ফিচার
 
 - Faster-Whisper-এর ইনস্টল করা multilingual tokenizer-এর সব ১০০টি সমর্থিত ভাষা; searchable language picker এবং Auto detect
