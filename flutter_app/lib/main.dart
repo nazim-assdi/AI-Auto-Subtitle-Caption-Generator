@@ -501,6 +501,10 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       final controller = TextEditingController(
         text: segments.map((item) => (item as Map<String, dynamic>)['text']?.toString() ?? '').join('\n'),
       );
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
       final edited = await showDialog<String>(
         context: context,
         builder: (dialogContext) => AlertDialog(
