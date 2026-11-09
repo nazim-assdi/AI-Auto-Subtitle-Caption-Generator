@@ -59,6 +59,9 @@ jobs:
       - name: Resolve Flutter dependencies
         working-directory: flutter_app
         run: flutter pub get
+      - name: Run dashboard widget tests
+        working-directory: flutter_app
+        run: flutter test --no-pub
       - name: Analyze Dart code
         working-directory: flutter_app
         run: flutter analyze --no-pub
