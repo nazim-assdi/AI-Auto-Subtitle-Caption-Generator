@@ -4,6 +4,7 @@ Local-first AI video captioning for Android and Windows. Flutter uploads a video
 
 - All 100 language codes exposed by the installed multilingual Whisper tokenizer; searchable language picker and automatic language detection
 - Word-level timing and active-word highlight
+- Export Center: Excel XLSX, Word DOCX, CSV, TSV, SRT, VTT, ASS, SSA, SBV, TXT, Markdown, HTML and JSON
 - Hormozi-inspired yellow, cyan and neon caption themes
 - MP4 with burned-in captions, separate SRT and transcript downloads
 - Live progress, preview and Android/Windows export

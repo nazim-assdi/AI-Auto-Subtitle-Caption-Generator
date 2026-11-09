@@ -2,7 +2,7 @@
 
 A local-first captioning workflow. The Flutter client uploads a video to a Windows PC backend. Faster-Whisper produces transcription and word timestamps; FFmpeg/libass burns active-word captions into an MP4.
 
-Features: All 100 language codes exposed by the installed multilingual Whisper tokenizer, with a searchable picker and auto language detection; Tiny/Base/Small CPU models; Hormozi-inspired yellow, cyan and neon styles; MP4, SRT and transcript export; progress polling and preview; Android and Windows clients.
+Features: all 100 language codes exposed by the installed multilingual Whisper tokenizer; vocabulary hints; editable transcript and re-render; Creator Pulse metrics; six caption styles; Export Center for MP4, SRT, VTT, ASS, SSA, SBV, TXT, timed TXT, CSV, TSV, Excel XLSX, Word DOCX, Markdown, HTML and JSON; one ZIP containing all transcript exports; optional offline translation; Android and Windows clients.
 
 Backend setup: install Python 3.11/3.12 and FFmpeg/FFprobe, run backend/install_backend.bat, then backend/start_backend.bat. Open http://127.0.0.1:8000/health to check readiness. The first run downloads the selected Whisper model.
 

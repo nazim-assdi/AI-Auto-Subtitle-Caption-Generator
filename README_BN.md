@@ -45,9 +45,19 @@ PC ও ফোন একই Wi-Fi-তে রাখো। PC-তে ipconfig চ�
 - Tiny, Base ও Small Whisper মডেল
 - Word-by-word active highlight; Hormozi-inspired, Cyan ও Neon theme
 - Editable transcript, Creator Vocabulary Boost, Creator Pulse report (pace, pause, filler-word hints, review words, hook suggestions)
-- H.264/AAC MP4, SRT, VTT, ASS, TXT, Project JSON এবং Creator Report export
+- Export Center: MP4, SRT, WebVTT, ASS, SSA, YouTube SBV, TXT, Timecoded TXT, CSV, TSV, Excel XLSX, Word DOCX, Markdown, HTML, Project JSON এবং Creator Report
 - Optional offline translated SRT/VTT ও bilingual SRT (Argos model install থাকলে)
 - Progress, preview, Android Gallery ও Windows save
+
+## Export Center
+
+ভিডিও render শেষ হলে Export Center থেকে প্রয়োজনীয় ফাইল আলাদাভাবে Download করতে পারবে।
+
+- Subtitle: SRT, VTT, ASS, SSA, SBV
+- Spreadsheet: Excel XLSX (Captions, Word Timing ও Creator Pulse sheet), CSV, TSV
+- Document/Text: Word DOCX, TXT, Timecoded TXT, Markdown, HTML
+- Data: Project JSON ও Creator Report JSON
+- All Exports ZIP: সব subtitle, transcript, Excel ও Word export একসঙ্গে
 
 ## PC সেটিংস ও সীমাবদ্ধতা
 
@@ -55,6 +65,6 @@ Ryzen 5 2400G ও 8 GB RAM-এ Base model দিয়ে শুরু করো; �
 
 Backend একই LAN-এ 0.0.0.0:8000-এ চলে এবং এতে login/token নেই। Router port-forward করে public internet-এ প্রকাশ কোরো না। Backend restart হলে job status memory থেকে মুছে যাবে; completed output backend/data/jobs-এ থাকে। Transcription accuracy audio quality-এর ওপর নির্ভর করে। Burned-in caption ভিডিও থেকে বন্ধ করা যায় না; আলাদা SRT edit করা যাবে।
 
-API: GET /health, GET /languages (Whisper-এর পূর্ণ language list), POST /jobs, GET /jobs/{job_id}, GET /jobs/{job_id}/stream, GET /jobs/{job_id}/download?kind=video|srt|txt.
+API: GET /health, GET /languages (Whisper-এর পূর্ণ language list), POST /jobs, GET /jobs/{job_id}, GET /jobs/{job_id}/stream, GET /jobs/{job_id}/download?kind=video|srt|vtt|ass|ssa|sbv|txt|timecoded-txt|csv|tsv|xlsx|docx|md|html|json|insights|all-exports.
 
 Backend test: backend ফোল্ডারে requirements install করার পর python -m unittest discover -s tests -v চালাও।

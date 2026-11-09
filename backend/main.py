@@ -27,6 +27,7 @@ except ImportError:
     argos_translate = None
 
 from subtitle_utils import STYLE_COLORS, collect_word_items, make_ass, make_srt, make_vtt
+from export_utils import make_all_exports
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -330,6 +331,7 @@ def write_project_exports(job_dir: Path, segment_data: list[dict[str, Any]], sty
         json.dumps(insights, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    make_all_exports(job_dir, segment_data, insights=insights, language=language)
     return insights
 
 
@@ -706,13 +708,23 @@ def output_file(job_id: str, kind: str) -> tuple[Path, str, str]:
         "txt": ("transcript.txt", "text/plain; charset=utf-8", "transcript.txt"),
         "json": ("transcript.json", "application/json", "transcript.json"),
         "insights": ("creator_report.json", "application/json", "creator_report.json"),
+        "sbv": ("captions.sbv", "text/plain; charset=utf-8", "captions.sbv"),
+        "ssa": ("captions.ssa", "text/plain; charset=utf-8", "captions.ssa"),
+        "csv": ("captions.csv", "text/csv; charset=utf-8", "captions.csv"),
+        "tsv": ("captions.tsv", "text/tab-separated-values; charset=utf-8", "captions.tsv"),
+        "xlsx": ("captions.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "captions.xlsx"),
+        "docx": ("transcript.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "transcript.docx"),
+        "timecoded-txt": ("transcript-timecoded.txt", "text/plain; charset=utf-8", "transcript-timecoded.txt"),
+        "md": ("transcript.md", "text/markdown; charset=utf-8", "transcript.md"),
+        "html": ("transcript.html", "text/html; charset=utf-8", "transcript.html"),
+        "all-exports": ("all-exports.zip", "application/zip", "AI_Subtitle_All_Exports.zip"),
         "translated-srt": ("translated.srt", "application/x-subrip", "translated.srt"),
         "translated-vtt": ("translated.vtt", "text/vtt", "translated.vtt"),
         "bilingual-srt": ("bilingual.srt", "application/x-subrip", "bilingual.srt"),
         "translation-json": ("translation.json", "application/json", "translation.json"),
     }
     if kind not in choices:
-        raise HTTPException(status_code=400, detail="kind: video, srt, vtt, ass, txt, json, insights, translated-srt, translated-vtt, bilingual-srt বা translation-json হতে পারে।")
+        raise HTTPException(status_code=400, detail="kind: video, srt, vtt, ass, ssa, sbv, txt, timecoded-txt, csv, tsv, xlsx, docx, md, html, json, insights, all-exports, translated-srt, translated-vtt, bilingual-srt বা translation-json হতে পারে।")
     filename, media_type, download_name = choices[kind]
     path = job_dir / filename
     if not path.exists():

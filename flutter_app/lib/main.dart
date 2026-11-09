@@ -382,6 +382,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
         bytes: response.bodyBytes,
         fileExtension: _exportExtension(kind),
         mimeType: _exportMimeType(kind),
+        customMimeType: _exportCustomMimeType(kind),
         subfolder: 'AI Captions',
       );
       if (mounted) setState(() => _stage = '$kind export সেভ হয়েছে.');
@@ -391,14 +392,65 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   }
 
   String _exportExtension(String kind) {
-    if (kind == 'insights' || kind == 'json' || kind == 'translation-json') return 'json';
-    if (kind == 'translated-srt' || kind == 'bilingual-srt') return 'srt';
-    if (kind == 'translated-vtt') return 'vtt';
-    return kind;
+    const aliases = {
+      'insights': 'json',
+      'all-exports': 'zip',
+      'json': 'json',
+      'translation-json': 'json',
+      'translated-srt': 'srt',
+      'bilingual-srt': 'srt',
+      'translated-vtt': 'vtt',
+      'timecoded-txt': 'txt',
+    };
+    return aliases[kind] ?? kind;
   }
 
-  MimeType _exportMimeType(String kind) =>
-      kind == 'insights' || kind == 'json' || kind == 'translation-json' ? MimeType.json : MimeType.text;
+  MimeType _exportMimeType(String kind) {
+    switch (kind) {
+      case 'json':
+      case 'insights':
+      case 'translation-json':
+        return MimeType.json;
+      case 'xlsx':
+        return MimeType.microsoftExcel;
+      case 'docx':
+        return MimeType.microsoftWord;
+      case 'csv':
+        return MimeType.csv;
+      case 'md':
+        return MimeType.markdown;
+      case 'all-exports':
+        return MimeType.zip;
+      case 'txt':
+      case 'timecoded-txt':
+        return MimeType.text;
+      default:
+        return MimeType.custom;
+    }
+  }
+
+  String? _exportCustomMimeType(String kind) {
+    const types = {
+      'srt': 'application/x-subrip',
+      'translated-srt': 'application/x-subrip',
+      'bilingual-srt': 'application/x-subrip',
+      'vtt': 'text/vtt',
+      'translated-vtt': 'text/vtt',
+      'ass': 'text/plain',
+      'ssa': 'text/plain',
+      'sbv': 'text/plain',
+      'tsv': 'text/tab-separated-values',
+      'html': 'text/html',
+    };
+    return types[kind];
+  }
+
+  Widget _exportButton(String label, String kind, IconData icon) =>
+      OutlinedButton.icon(
+        onPressed: _busy ? null : () => _saveExport(kind),
+        icon: Icon(icon, size: 17),
+        label: Text(label),
+      );
 
   Future<void> _translateSubtitles() async {
     final id = _jobId;
@@ -846,13 +898,37 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
                           FilledButton.icon(onPressed: _saveVideo, icon: const Icon(Icons.download), label: const Text('ভিডিও Save')),
                         ]),
                       ],
+                      const Text('Export Center', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+                      const SizedBox(height: 8),
                       Wrap(spacing: 8, runSpacing: 8, children: [
                         OutlinedButton.icon(onPressed: _editTranscript, icon: const Icon(Icons.edit_note), label: const Text('Edit Transcript')),
                         OutlinedButton.icon(onPressed: _translateSubtitles, icon: const Icon(Icons.translate), label: const Text('Offline Translate')),
-                        OutlinedButton.icon(onPressed: () => _saveExport('vtt'), icon: const Icon(Icons.subtitles), label: const Text('VTT')),
-                        OutlinedButton.icon(onPressed: () => _saveExport('ass'), icon: const Icon(Icons.style), label: const Text('ASS')),
-                        OutlinedButton.icon(onPressed: () => _saveExport('json'), icon: const Icon(Icons.data_object), label: const Text('Project JSON')),
-                        OutlinedButton.icon(onPressed: () => _saveExport('insights'), icon: const Icon(Icons.insights), label: const Text('Creator Report')),
+                      ]),
+                      const SizedBox(height: 12),
+                      const Text('Subtitle formats', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 5),
+                      Wrap(spacing: 8, runSpacing: 8, children: [
+                        _exportButton('SRT', 'srt', Icons.subtitles),
+                        _exportButton('WebVTT', 'vtt', Icons.closed_caption),
+                        _exportButton('ASS', 'ass', Icons.style),
+                        _exportButton('SSA', 'ssa', Icons.text_fields),
+                        _exportButton('YouTube SBV', 'sbv', Icons.video_file),
+                      ]),
+                      const SizedBox(height: 12),
+                      const Text('Text, spreadsheet & document', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 5),
+                      Wrap(spacing: 8, runSpacing: 8, children: [
+                        _exportButton('Excel XLSX', 'xlsx', Icons.table_chart),
+                        _exportButton('Word DOCX', 'docx', Icons.description),
+                        _exportButton('CSV', 'csv', Icons.grid_on),
+                        _exportButton('TSV', 'tsv', Icons.view_week),
+                        _exportButton('TXT', 'txt', Icons.notes),
+                        _exportButton('Timed TXT', 'timecoded-txt', Icons.schedule),
+                        _exportButton('Markdown', 'md', Icons.code),
+                        _exportButton('HTML', 'html', Icons.web),
+                        _exportButton('Project JSON', 'json', Icons.data_object),
+                        _exportButton('Creator Report', 'insights', Icons.insights),
+                        _exportButton('All Exports ZIP', 'all-exports', Icons.folder_zip),
                       ]),
                       if (_translationTarget != null) ...[
                         const SizedBox(height: 8),
