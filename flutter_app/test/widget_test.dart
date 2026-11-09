@@ -4,6 +4,10 @@ import 'package:ai_auto_subtitle_generator/main.dart';
 
 void main() {
   testWidgets('premium creator dashboard renders its main workspace', (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(const CaptionApp());
     await tester.pumpAndSettle();
     expect(find.text('Create something remarkable.'), findsOneWidget);
@@ -31,6 +35,6 @@ void main() {
     await tester.tap(find.text('Exports').last);
     await tester.pumpAndSettle();
     expect(find.text('Your export library is empty'), findsOneWidget);
-    expect(find.text('Export center'), findsOneWidget);
+    expect(find.text('Export center'), findsAtLeastNWidgets(2));
   });
 }

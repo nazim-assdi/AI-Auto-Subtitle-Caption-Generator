@@ -973,7 +973,15 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       ],
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Text(_currentPageTitle, style: TextStyle(fontSize: desktop ? 22 : 17, fontWeight: FontWeight.w900, letterSpacing: -0.65)),
+          Flexible(
+            child: Text(
+              _currentPageTitle,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: desktop ? 22 : 17, fontWeight: FontWeight.w900, letterSpacing: -0.65),
+            ),
+          ),
           if (desktop) ...[
             const SizedBox(width: 10),
             Container(width: 4, height: 4, decoration: const BoxDecoration(color: Color(0xFF66758E), shape: BoxShape.circle)),
