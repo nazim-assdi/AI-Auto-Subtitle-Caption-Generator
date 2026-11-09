@@ -6,6 +6,8 @@ Features: All 100 language codes exposed by the installed multilingual Whisper t
 
 Backend setup: install Python 3.11/3.12 and FFmpeg/FFprobe, run backend/install_backend.bat, then backend/start_backend.bat. Open http://127.0.0.1:8000/health to check readiness. The first run downloads the selected Whisper model.
 
+Processing diagnostics: press `Test` in the app. `GET /health` reports `ffmpeg_ready` and `ass_filter_ready`. Both must be true. If the ASS filter is missing, install a libass-enabled FFmpeg build (Windows: `winget install -e --id Gyan.FFmpeg.Shared`), open a new terminal and restart the backend. The app shows the detailed job error instead of silently placing a failure message in the server-status line.
+
 Optional offline translation: from `backend/`, run `install_translation_model.bat en bn` to install an English-to-Bengali Argos model route (replace the language codes as required). Once installed, subtitle translation runs locally. Not every Whisper recognition language has an Argos translation package; see `GET /translation/status` for installed pairs.
 
 Build: install Flutter 3.38+, Android SDK/licenses and Visual Studio 2022 Desktop development with C++ for Windows. Run flutter_app/build_all.bat. APK is written to flutter_app/build/app/outputs/flutter-apk/app-release.apk. Windows portable files are in flutter_app/dist/Windows_Portable/; keep the whole folder together.

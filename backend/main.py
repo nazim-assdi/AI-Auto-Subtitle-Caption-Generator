@@ -128,6 +128,48 @@ def get_model(model_size: str) -> WhisperModel:
     return loaded_model
 
 
+def parse_ffmpeg_filters(output: str) -> set[str]:
+    """Extract FFmpeg filter names from the human-readable -filters table."""
+    available: set[str] = set()
+    for line in output.splitlines():
+        columns = line.split()
+        if len(columns) >= 2 and len(columns[0]) == 3 and set(columns[0]) <= {".", "A", "C", "V", "S", "N", "T"}:
+            available.add(columns[1])
+    return available
+
+
+def get_ffmpeg_capabilities() -> dict[str, Any]:
+    ffmpeg_path = shutil.which("ffmpeg")
+    ffprobe_path = shutil.which("ffprobe")
+    result: dict[str, Any] = {
+        "ffmpeg_ready": bool(ffmpeg_path and ffprobe_path),
+        "ffmpeg_path": ffmpeg_path,
+        "ffprobe_path": ffprobe_path,
+        "ass_filter_ready": False,
+        "subtitles_filter_ready": False,
+        "ffmpeg_version": None,
+    }
+    if not ffmpeg_path:
+        result["diagnostic"] = "FFmpeg PATH-এ পাওয়া যায়নি।"
+        return result
+    try:
+        version = subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
+        result["ffmpeg_version"] = (version.stdout.splitlines() or [""])[0]
+        filters = subprocess.run([ffmpeg_path, "-hide_banner", "-filters"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15)
+        available = parse_ffmpeg_filters((filters.stdout or "") + "\\n" + (filters.stderr or ""))
+        result["ass_filter_ready"] = "ass" in available
+        result["subtitles_filter_ready"] = "subtitles" in available
+        if not ffprobe_path:
+            result["diagnostic"] = "FFprobe পাওয়া যায়নি; FFmpeg-এর একই distribution থেকে FFprobe install করো।"
+        elif not result["ass_filter_ready"]:
+            result["diagnostic"] = "FFmpeg-এ ASS/libass filter নেই। libass support-সহ full FFmpeg build install করতে হবে।"
+        else:
+            result["diagnostic"] = "FFmpeg, FFprobe ও ASS subtitle renderer প্রস্তুত।"
+    except Exception as exc:
+        result["diagnostic"] = f"FFmpeg diagnostics ব্যর্থ: {exc}"
+    return result
+
+
 def run_command(command: list[str], cwd: Optional[Path] = None) -> subprocess.CompletedProcess[str]:
     try:
         result = subprocess.run(
@@ -313,8 +355,11 @@ def process_job(job_id: str, source_path: Path, model_size: str, language: str, 
     job_dir = source_path.parent
     audio_path = job_dir / "speech.wav"
     try:
-        if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
-            raise RuntimeError("FFmpeg/FFprobe ইনস্টল নেই। FFmpeg install করে PATH-এ যোগ করো।")
+        capabilities = get_ffmpeg_capabilities()
+        if not capabilities["ffmpeg_ready"]:
+            raise RuntimeError(str(capabilities.get("diagnostic") or "FFmpeg/FFprobe ইনস্টল নেই।"))
+        if not capabilities["ass_filter_ready"]:
+            raise RuntimeError("এই FFmpeg build-এ ASS/libass subtitle renderer নেই। FFmpeg full/shared build install করে Terminal restart করো। Diagnostics: " + str(capabilities.get("diagnostic")))
         update_job(job_id, status="processing", progress=8, stage="ভিডিও থেকে অডিও প্রস্তুত করা হচ্ছে")
         run_command([
             shutil.which("ffmpeg") or "ffmpeg", "-y", "-i", source_path.name, "-vn",
@@ -407,9 +452,9 @@ def health() -> dict[str, Any]:
         "ok": True,
         "service": "AI Auto Subtitle Creator Studio",
         "version": app.version,
-        "ffmpeg_ready": bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
         "max_upload_mb": MAX_UPLOAD_MB,
         "default_model": "base",
+        **get_ffmpeg_capabilities(),
     }
 
 

@@ -72,6 +72,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   String? _translationTarget;
   bool _busy = false;
   bool _serverOkay = false;
+  String _serverStatusText = 'সার্ভার পরীক্ষা করা হয়নি। Test চাপো।';
   double _progress = 0;
   String _stage = 'প্রথমে PC-এর AI সার্ভার চালু করো।';
   String? _jobId;
@@ -107,7 +108,9 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       final response = await http.get(_uri('/health')).timeout(const Duration(seconds: 8));
       if (response.statusCode != 200) throw Exception('সার্ভার উত্তর দেয়নি (${response.statusCode})');
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final ready = data['ffmpeg_ready'] == true;
+      final ffmpegReady = data['ffmpeg_ready'] == true;
+      final assReady = data['ass_filter_ready'] == true;
+      final ready = ffmpegReady && assReady;
       final languageResponse = await http.get(_uri('/languages')).timeout(const Duration(seconds: 8));
       if (languageResponse.statusCode != 200) {
         throw Exception('সমর্থিত ভাষার তালিকা পাওয়া যায়নি (${languageResponse.statusCode})');
@@ -130,15 +133,17 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
         _serverOkay = ready;
         _availableLanguages = available;
         if (!available.any((item) => item['code'] == _language)) _language = 'auto';
-        _stage = ready
-            ? 'সার্ভার সংযুক্ত • ${languageData['count'] ?? available.length - 1}টি ভাষা উপলব্ধ।'
-            : 'সার্ভার চালু, কিন্তু FFmpeg পাওয়া যায়নি।';
+        _serverStatusText = !ffmpegReady
+            ? 'FFmpeg/FFprobe পাওয়া যায়নি। install_backend নির্দেশনা দেখো।'
+            : !assReady
+                ? 'FFmpeg-এ ASS/libass subtitle filter নেই। Full FFmpeg build install করো।'
+                : 'Server ready • ${languageData['count'] ?? available.length - 1}টি ভাষা উপলব্ধ।';
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _serverOkay = false;
-        _stage = 'সার্ভারে সংযোগ হয়নি: ${_friendlyError(e)}';
+        _serverStatusText = 'সার্ভারে সংযোগ হয়নি: ${_friendlyError(e)}';
       });
     }
   }
@@ -643,7 +648,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
                         Icon(_serverOkay ? Icons.check_circle : Icons.info_outline,
                             color: _serverOkay ? Colors.greenAccent : Colors.amberAccent, size: 18),
                         const SizedBox(width: 8),
-                        Expanded(child: Text(_stage, style: const TextStyle(fontSize: 12, color: Colors.white70))),
+                        Expanded(child: Text(_serverStatusText, style: TextStyle(fontSize: 12, color: _serverOkay ? Colors.greenAccent : Colors.amberAccent))),
                         TextButton(onPressed: _busy ? null : _checkServer, child: const Text('Test')),
                       ]),
                       if (Platform.isAndroid)
@@ -785,7 +790,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
                   label: Text(_busy ? 'AI কাজ করছে...' : 'AI Caption তৈরি করুন'),
                   style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54), textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
                 ),
-                if (_busy || _jobId != null) ...[
+                if (_busy || _jobId != null || _error != null) ...[
                   const SizedBox(height: 14),
                   Card(child: Padding(
                     padding: const EdgeInsets.all(16),

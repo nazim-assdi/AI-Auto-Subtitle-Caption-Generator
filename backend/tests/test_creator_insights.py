@@ -3,10 +3,22 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from main import build_insights
+from main import build_insights, parse_ffmpeg_filters
 
 
 class CreatorInsightsTest(unittest.TestCase):
+    def test_ffmpeg_filter_parser_detects_libass_filters(self):
+        output = """
+ ... scale V->V Scale the input video size and/or convert the image format.
+ ... ass V->V Render ASS subtitles onto input video using the libass library.
+ ... subtitles V->V Render text subtitles onto input video using the libass library.
+ ... format V->V Convert the input video to one of the specified pixel formats.
+"""
+        filters = parse_ffmpeg_filters(output)
+        self.assertIn("ass", filters)
+        self.assertIn("subtitles", filters)
+        self.assertIn("scale", filters)
+
     def test_pace_pauses_fillers_and_review_words(self):
         data = [
             {

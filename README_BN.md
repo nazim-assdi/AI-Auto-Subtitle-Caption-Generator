@@ -8,7 +8,12 @@
 2. FFmpeg ও FFprobe ইনস্টল করো। PowerShell-এ চালাতে পারো: winget install -e --id Gyan.FFmpeg.Shared
 3. backend ফোল্ডারে install_backend.bat চালাও।
 4. এরপর start_backend.bat চালু রাখো। প্রথমবার Whisper Base model ডাউনলোড হবে।
-5. Browser-এ http://127.0.0.1:8000/health খুলে ffmpeg_ready true আছে কি না দেখো।
+5. অ্যাপে Server-এর `Test` চাপো অথবা http://127.0.0.1:8000/health খুলে `ffmpeg_ready` ও `ass_filter_ready` দুটোই true কি না দেখো।
+6. `ass_filter_ready` false হলে FFmpeg-এর libass/ASS filter নেই। PowerShell-এ `winget install -e --id Gyan.FFmpeg.Shared` চালাও, পুরোনো Terminal বন্ধ করে নতুন Terminal খুলে `start_backend.bat` চালাও।
+
+## Processing error হলে
+
+অ্যাপে `Test` চাপলে Backend, FFmpeg, FFprobe এবং ASS/libass subtitle renderer-এর অবস্থা আলাদা করে দেখাবে। Video processing ব্যর্থ হলে Job panel-এ আসল Backend error দেখা যাবে। `FFmpeg-এ ASS/libass filter নেই` দেখালে Gyan shared/full FFmpeg build install করে Backend restart করো।
 
 ## Offline Translation Model (ঐচ্ছিক)
 
