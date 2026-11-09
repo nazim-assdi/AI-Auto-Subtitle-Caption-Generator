@@ -45,7 +45,8 @@ PC ও ফোন একই Wi-Fi-তে রাখো। PC-তে ipconfig চ�
 
 ## Professional Creator Studio Dashboard
 
-- Desktop-এ professional left sidebar; Android/ছোট screen-এ bottom navigation
+- Desktop-এ animated professional left sidebar; Android/ছোট screen-এ floating bottom navigation dock
+- Gradient glass-style cards, ambient grid background, refined AI engine status pill, animated KPI ও page transitions
 - চারটি আলাদা workspace: Overview, New Project, Export Center, Settings
 - Overview dashboard-এ project status, language/AI status cards, recent project ও quick actions
 - New Project-এ video source এবং caption settings আলাদা panel-এ

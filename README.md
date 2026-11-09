@@ -11,7 +11,7 @@ Local-first AI video captioning for Android and Windows. Flutter uploads a video
 
 ## Creator Studio Dashboard
 
-Responsive professional dashboard with Overview, New Project, Export Center and Settings workspaces. Desktop uses a sidebar; Android uses bottom navigation.
+Premium responsive dashboard with Overview, New Project, Export Center and Settings workspaces. Desktop uses an animated sidebar; Android uses a floating bottom navigation dock. Visual system includes an ambient grid backdrop, gradient glass-style cards, refined AI engine health badge, animated KPI cards, an editorial hero panel and smooth page transitions.
 
 ## Windows launch
 

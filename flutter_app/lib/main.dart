@@ -25,13 +25,30 @@ class CaptionApp extends StatelessWidget {
       title: 'AI Auto Subtitle Generator',
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark),
-        scaffoldBackgroundColor: const Color(0xFF0A1020),
-        cardTheme: CardThemeData(
-          color: const Color(0xFF151E30),
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark).copyWith(
+          primary: const Color(0xFF9B8CFF),
+          secondary: const Color(0xFF56D8D0),
+          surface: const Color(0xFF141F33),
+          outline: const Color(0xFF34445D),
         ),
+        scaffoldBackgroundColor: const Color(0xFF080E1B),
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+        splashFactory: InkSparkle.splashFactory,
+        cardTheme: CardThemeData(
+          color: const Color(0xFF141F33),
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          margin: EdgeInsets.zero,
+        ),
+        navigationBarTheme: NavigationBarThemeData(
+          backgroundColor: const Color(0xFF101A2D),
+          indicatorColor: const Color(0xFF393365),
+          labelTextStyle: WidgetStateProperty.resolveWith((states) => TextStyle(
+            fontSize: 10,
+            fontWeight: states.contains(WidgetState.selected) ? FontWeight.w800 : FontWeight.w500,
+          )),
+        ),
+        dividerColor: const Color(0xFF2A3850),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: const Color(0xFF1B2740),
@@ -46,6 +63,74 @@ class CaptionApp extends StatelessWidget {
       home: const CaptionHomePage(),
     );
   }
+}
+
+class _WorkspaceBackdrop extends StatelessWidget {
+  const _WorkspaceBackdrop();
+
+  @override
+  Widget build(BuildContext context) => Stack(fit: StackFit.expand, children: [
+    const DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF0A1324), Color(0xFF0A1020), Color(0xFF080E1B)]),
+      ),
+    ),
+    Positioned(
+      top: -180,
+      right: -100,
+      child: Container(width: 440, height: 440, decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(colors: [Color(0x1B8277F7), Color(0x008277F7)]),
+      )),
+    ),
+    Positioned(
+      bottom: -220,
+      left: -150,
+      child: Container(width: 500, height: 500, decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(colors: [Color(0x1156D8D0), Color(0x0056D8D0)]),
+      )),
+    ),
+    const Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _SoftGridPainter()))),
+  ]);
+}
+
+class _SoftGridPainter extends CustomPainter {
+  const _SoftGridPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final line = Paint()..color = const Color(0x0D9FB1D0)..strokeWidth = 0.55;
+    const step = 42.0;
+    for (double x = 0; x <= size.width; x += step) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), line);
+    }
+    for (double y = 0; y <= size.height; y += step) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), line);
+    }
+    final dots = Paint()..color = const Color(0x1A9FA9D2);
+    for (double x = 18; x < size.width; x += step) {
+      for (double y = 18; y < size.height; y += step) {
+        canvas.drawCircle(Offset(x, y), 0.8, dots);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SoftGridPainter oldDelegate) => false;
+}
+
+class _HeroFeature extends StatelessWidget {
+  const _HeroFeature({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
+    Icon(icon, size: 12, color: const Color(0xFFB9E9E3)),
+    const SizedBox(width: 5),
+    Text(label, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFFD3D9EF))),
+  ]);
 }
 
 class CaptionHomePage extends StatefulWidget {
@@ -700,9 +785,12 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   }
 
   Widget _buildSidebar() => Container(
-    width: 252,
-    decoration: const BoxDecoration(color: Color(0xFF0D1628), border: Border(right: BorderSide(color: Color(0xFF202D43)))),
-    padding: const EdgeInsets.fromLTRB(18, 22, 16, 18),
+    width: 268,
+    decoration: const BoxDecoration(
+      gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF101B31), Color(0xFF0B1425), Color(0xFF0A1221)]),
+      border: Border(right: BorderSide(color: Color(0xFF26354D))),
+    ),
+    padding: const EdgeInsets.fromLTRB(19, 23, 17, 18),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         Container(width: 42, height: 42, decoration: BoxDecoration(borderRadius: BorderRadius.circular(13), gradient: const LinearGradient(colors: [Color(0xFF958BFF), Color(0xFF6355D9)])), child: const Icon(Icons.closed_caption_rounded, color: Colors.white, size: 25)),
@@ -750,42 +838,72 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   Widget _buildSideNavItem(int index, IconData icon, String label, String subtitle) {
     final selected = _activePage == index;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 5),
-      child: Material(
-        color: selected ? const Color(0xFF29264D) : Colors.transparent,
-        borderRadius: BorderRadius.circular(13),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(13),
-          onTap: () => setState(() => _activePage = index),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            child: Row(children: [
-              Icon(icon, size: 19, color: selected ? const Color(0xFFB7AFFF) : const Color(0xFF8E9BB2)),
-              const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(label, style: TextStyle(fontSize: 12, fontWeight: selected ? FontWeight.w800 : FontWeight.w600, color: selected ? Colors.white : const Color(0xFFB5C0D2))),
-                Text(subtitle, style: const TextStyle(fontSize: 9, color: Color(0xFF75839A))),
-              ])),
-              if (selected) Container(width: 5, height: 5, decoration: const BoxDecoration(color: Color(0xFF9D91FF), shape: BoxShape.circle)),
-            ]),
+      padding: const EdgeInsets.only(bottom: 7),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        decoration: BoxDecoration(
+          gradient: selected ? const LinearGradient(begin: Alignment.centerLeft, end: Alignment.centerRight, colors: [Color(0xFF39356B), Color(0xFF252744)]) : null,
+          color: selected ? null : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: selected ? const Color(0xFF55518B) : Colors.transparent),
+          boxShadow: selected ? const [BoxShadow(color: Color(0x302A266F), blurRadius: 18, offset: Offset(0, 5))] : null,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () => setState(() => _activePage = index),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              child: Row(children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: selected ? const Color(0xFF6E63C9).withValues(alpha: 0.26) : const Color(0xFF1B2940),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, size: 18, color: selected ? const Color(0xFFC8C1FF) : const Color(0xFF93A2BB)),
+                ),
+                const SizedBox(width: 11),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(label, style: TextStyle(fontSize: 12, fontWeight: selected ? FontWeight.w800 : FontWeight.w600, color: selected ? Colors.white : const Color(0xFFB5C0D2))),
+                  Text(subtitle, style: TextStyle(fontSize: 9, color: selected ? const Color(0xFFB5B3D6) : const Color(0xFF75839A))),
+                ])),
+                if (selected) Container(width: 6, height: 6, decoration: const BoxDecoration(color: Color(0xFF9F96FF), shape: BoxShape.circle, boxShadow: [BoxShadow(color: Color(0xAA9F96FF), blurRadius: 7)])),
+              ]),
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildBottomNavigation() => NavigationBar(
-    height: 68,
-    backgroundColor: const Color(0xFF0D1628),
-    indicatorColor: const Color(0xFF302D59),
-    selectedIndex: _activePage,
-    onDestinationSelected: (index) => setState(() => _activePage = index),
-    destinations: const [
-      NavigationDestination(icon: Icon(Icons.grid_view_rounded), label: 'Home'),
-      NavigationDestination(icon: Icon(Icons.add_box_rounded), label: 'Create'),
-      NavigationDestination(icon: Icon(Icons.file_download_rounded), label: 'Exports'),
-      NavigationDestination(icon: Icon(Icons.tune_rounded), label: 'Settings'),
-    ],
+  Widget _buildBottomNavigation() => Container(
+    margin: const EdgeInsets.fromLTRB(12, 0, 12, 9),
+    decoration: BoxDecoration(
+      color: const Color(0xF1111C30),
+      borderRadius: BorderRadius.circular(19),
+      border: Border.all(color: const Color(0xFF34425E)),
+      boxShadow: const [BoxShadow(color: Color(0x55000000), blurRadius: 22, offset: Offset(0, -4))],
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: NavigationBar(
+      height: 66,
+      backgroundColor: Colors.transparent,
+      indicatorColor: const Color(0xFF393365),
+      selectedIndex: _activePage,
+      onDestinationSelected: (index) => setState(() => _activePage = index),
+      destinations: const [
+        NavigationDestination(icon: Icon(Icons.grid_view_rounded), label: 'Home'),
+        NavigationDestination(icon: Icon(Icons.add_box_rounded), label: 'Create'),
+        NavigationDestination(icon: Icon(Icons.file_download_rounded), label: 'Exports'),
+        NavigationDestination(icon: Icon(Icons.tune_rounded), label: 'Settings'),
+      ],
+    ),
   );
 
   String get _currentPageTitle => const ['Overview', 'New project', 'Export center', 'Settings'][_activePage];
@@ -798,48 +916,103 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
 
   Widget _buildWorkspace({required bool desktop}) => Column(children: [
     _buildTopBar(desktop: desktop),
-    Expanded(child: IndexedStack(index: _activePage, children: [
-      _buildDashboardPage(),
-      _buildCreatePage(),
-      _buildExportPage(),
-      _buildSettingsPage(),
-    ])),
+    Expanded(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          const Positioned.fill(child: _WorkspaceBackdrop()),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 260),
+            reverseDuration: const Duration(milliseconds: 180),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(begin: const Offset(0.018, 0), end: Offset.zero).animate(animation),
+                child: child,
+              ),
+            ),
+            child: KeyedSubtree(
+              key: ValueKey<int>(_activePage),
+              child: _activeWorkspacePage(desktop: desktop),
+            ),
+          ),
+        ],
+      ),
+    ),
   ]);
 
+  Widget _activeWorkspacePage({required bool desktop}) => switch (_activePage) {
+    0 => _buildDashboardPage(),
+    1 => _buildCreatePage(),
+    2 => _buildExportPage(),
+    _ => _buildSettingsPage(),
+  };
+
   Widget _buildTopBar({required bool desktop}) => Container(
-    padding: EdgeInsets.fromLTRB(desktop ? 30 : 18, 17, desktop ? 30 : 18, 15),
-    decoration: const BoxDecoration(color: Color(0xFF0A1020), border: Border(bottom: BorderSide(color: Color(0xFF1D2A40)))),
+    padding: EdgeInsets.fromLTRB(desktop ? 32 : 18, 16, desktop ? 32 : 18, 15),
+    decoration: BoxDecoration(
+      color: const Color(0xE80A1324),
+      border: const Border(bottom: BorderSide(color: Color(0xFF26364E))),
+      boxShadow: const [BoxShadow(color: Color(0x26000000), blurRadius: 18, offset: Offset(0, 5))],
+    ),
     child: Row(children: [
       if (!desktop) ...[
-        Container(width: 34, height: 34, decoration: BoxDecoration(color: const Color(0xFF665BD2), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.closed_caption_rounded, color: Colors.white, size: 20)),
-        const SizedBox(width: 10),
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF9B8CFF), Color(0xFF5951B8)]),
+            boxShadow: const [BoxShadow(color: Color(0x665E55C7), blurRadius: 13, offset: Offset(0, 4))],
+          ),
+          child: const Icon(Icons.closed_caption_rounded, color: Colors.white, size: 21),
+        ),
+        const SizedBox(width: 11),
       ],
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(_currentPageTitle, style: TextStyle(fontSize: desktop ? 21 : 17, fontWeight: FontWeight.w900, letterSpacing: -0.4)),
-        if (desktop) Padding(padding: const EdgeInsets.only(top: 3), child: Text(_currentPageSubtitle, style: const TextStyle(fontSize: 11, color: Color(0xFF8795AD)))),
+        Row(children: [
+          Text(_currentPageTitle, style: TextStyle(fontSize: desktop ? 22 : 17, fontWeight: FontWeight.w900, letterSpacing: -0.65)),
+          if (desktop) ...[
+            const SizedBox(width: 10),
+            Container(width: 4, height: 4, decoration: const BoxDecoration(color: Color(0xFF66758E), shape: BoxShape.circle)),
+            const SizedBox(width: 10),
+            const Text('CREATOR WORKSPACE', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 1.35, color: Color(0xFF71829D))),
+          ],
+        ]),
+        if (desktop) Padding(padding: const EdgeInsets.only(top: 4), child: Text(_currentPageSubtitle, style: const TextStyle(fontSize: 11, color: Color(0xFF91A0B7)))),
       ])),
       _buildConnectionBadge(compact: !desktop),
       const SizedBox(width: 9),
-      IconButton(
-        tooltip: 'Refresh backend status',
-        onPressed: _busy ? null : _checkServer,
-        style: IconButton.styleFrom(backgroundColor: const Color(0xFF172238), foregroundColor: Colors.white70, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11))),
-        icon: const Icon(Icons.refresh_rounded, size: 19),
+      Container(
+        decoration: BoxDecoration(color: const Color(0xFF17243A), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFF2F405B))),
+        child: IconButton(tooltip: 'Refresh backend status', onPressed: _busy ? null : _checkServer, color: const Color(0xFFB7C3D6), icon: const Icon(Icons.sync_rounded, size: 18)),
       ),
     ]),
   );
 
-  Widget _buildConnectionBadge({bool compact = false}) => Container(
-    padding: EdgeInsets.symmetric(horizontal: compact ? 9 : 12, vertical: 8),
+  Widget _buildConnectionBadge({bool compact = false}) => AnimatedContainer(
+    duration: const Duration(milliseconds: 260),
+    padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 13, vertical: 9),
     decoration: BoxDecoration(
-      color: _serverOkay ? const Color(0xFF12352F) : const Color(0xFF382B20),
+      gradient: LinearGradient(colors: _serverOkay ? const [Color(0xFF123E3A), Color(0xFF15312F)] : const [Color(0xFF403222), Color(0xFF2D251F)]),
       borderRadius: BorderRadius.circular(30),
-      border: Border.all(color: _serverOkay ? const Color(0xFF286C59) : const Color(0xFF6C5130)),
+      border: Border.all(color: _serverOkay ? const Color(0xFF2B7869) : const Color(0xFF735A38)),
+      boxShadow: [BoxShadow(color: (_serverOkay ? const Color(0xFF31C79B) : const Color(0xFFD69A48)).withValues(alpha: 0.10), blurRadius: 14, offset: const Offset(0, 3))],
     ),
     child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Container(width: 7, height: 7, decoration: BoxDecoration(color: _serverOkay ? const Color(0xFF5BE0AC) : const Color(0xFFFFC36A), shape: BoxShape.circle)),
-      const SizedBox(width: 7),
-      Text(_serverOkay ? 'AI Online' : 'AI Offline', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: _serverOkay ? const Color(0xFF79E2B8) : const Color(0xFFFFD08B))),
+      Container(
+        width: 7,
+        height: 7,
+        decoration: BoxDecoration(
+          color: _serverOkay ? const Color(0xFF65E5B8) : const Color(0xFFFFC36A),
+          shape: BoxShape.circle,
+          boxShadow: [BoxShadow(color: (_serverOkay ? const Color(0xFF65E5B8) : const Color(0xFFFFC36A)).withValues(alpha: 0.7), blurRadius: 7)],
+        ),
+      ),
+      const SizedBox(width: 8),
+      Text(_serverOkay ? 'AI ENGINE READY' : 'AI ENGINE OFFLINE', style: TextStyle(fontSize: compact ? 8 : 9, fontWeight: FontWeight.w900, letterSpacing: 0.65, color: _serverOkay ? const Color(0xFF8BEAC8) : const Color(0xFFFFD08B))),
     ]),
   );
 
@@ -853,25 +1026,32 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   Widget _panel({required Widget child, EdgeInsets padding = const EdgeInsets.all(19)}) => Container(
     padding: padding,
     decoration: BoxDecoration(
-      color: const Color(0xFF141E31),
-      borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: const Color(0xFF26364F)),
-      boxShadow: const [BoxShadow(color: Color(0x18000000), blurRadius: 22, offset: Offset(0, 8))],
+      gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xE81B2940), Color(0xE8131E31), Color(0xEA101A2C)]),
+      borderRadius: BorderRadius.circular(21),
+      border: Border.all(color: const Color(0xFF30435F).withValues(alpha: 0.78)),
+      boxShadow: const [
+        BoxShadow(color: Color(0x2A000000), blurRadius: 26, offset: Offset(0, 10)),
+        BoxShadow(color: Color(0x0D9B8CFF), blurRadius: 18, offset: Offset(0, -2)),
+      ],
     ),
     child: child,
   );
 
-  Widget _eyebrow(String value) => Text(value.toUpperCase(), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.45, color: Color(0xFF8F9DB5)));
+  Widget _eyebrow(String value) => Row(mainAxisSize: MainAxisSize.min, children: [
+    Container(width: 6, height: 6, decoration: const BoxDecoration(color: Color(0xFF7E75F2), shape: BoxShape.circle, boxShadow: [BoxShadow(color: Color(0xAA7E75F2), blurRadius: 8)])),
+    const SizedBox(width: 8),
+    Text(value.toUpperCase(), style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.55, color: Color(0xFFA1AEC4))),
+  ]);
 
   Widget _sectionHeading(String title, String subtitle, {Widget? trailing}) => Row(
     crossAxisAlignment: CrossAxisAlignment.center,
     children: [
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: -0.2)),
-        const SizedBox(height: 4),
-        Text(subtitle, style: const TextStyle(fontSize: 11, color: Color(0xFF8D9BB2), height: 1.4)),
+        Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: -0.35, color: Color(0xFFF0F3FA))),
+        const SizedBox(height: 5),
+        Text(subtitle, style: const TextStyle(fontSize: 10, color: Color(0xFF92A1B8), height: 1.45)),
       ])),
-      ?trailing,
+      if (trailing != null) trailing,
     ],
   );
 
@@ -883,7 +1063,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _eyebrow('Your creative workspace'),
             const SizedBox(height: 7),
-            Text('Create something remarkable.', style: TextStyle(fontSize: wide ? 28 : 22, fontWeight: FontWeight.w900, letterSpacing: -0.9)),
+            Text('Create something remarkable.', style: TextStyle(fontSize: wide ? 30 : 23, fontWeight: FontWeight.w900, letterSpacing: -1.0, height: 1.13)),
             const SizedBox(height: 5),
             const Text('Everything you need to caption, polish and export your videos.', style: TextStyle(fontSize: 12, color: Color(0xFF8D9BB2))),
           ])),
@@ -916,39 +1096,111 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     }),
   );
 
-  Widget _buildDashboardHero({required bool wide}) => Container(
-    padding: EdgeInsets.all(wide ? 25 : 19),
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(22),
-      gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF37336F), Color(0xFF29294F), Color(0xFF19263C)]),
-      border: Border.all(color: const Color(0xFF514B91)),
+  Widget _buildDashboardHero({required bool wide}) => TweenAnimationBuilder<double>(
+    tween: Tween(begin: 0.96, end: 1),
+    duration: const Duration(milliseconds: 520),
+    curve: Curves.easeOutCubic,
+    builder: (context, scale, child) => Transform.scale(scale: scale, alignment: Alignment.topCenter, child: child),
+    child: Container(
+      padding: EdgeInsets.all(wide ? 30 : 20),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(26),
+        gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF34346F), Color(0xFF242D55), Color(0xFF142B3E)]),
+        border: Border.all(color: const Color(0xFF6864A9).withValues(alpha: 0.75)),
+        boxShadow: const [BoxShadow(color: Color(0x503A347B), blurRadius: 30, offset: Offset(0, 12))],
+      ),
+      child: Stack(children: [
+        Positioned(top: -95, right: 115, child: Container(width: 260, height: 260, decoration: const BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [Color(0x667F74F6), Color(0x007F74F6)])))),
+        Positioned(bottom: -125, right: -55, child: Container(width: 310, height: 310, decoration: const BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [Color(0x4456D8D0), Color(0x0056D8D0)])))),
+        wide
+            ? Row(children: [Expanded(child: _heroCopy()), const SizedBox(width: 24), _heroArtwork()])
+            : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_heroCopy(), const SizedBox(height: 18), Center(child: _heroArtwork())]),
+      ]),
     ),
-    child: wide ? Row(children: [Expanded(child: _heroCopy()), const SizedBox(width: 20), _heroArtwork()]) : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_heroCopy(), const SizedBox(height: 15), _heroArtwork()]),
   );
 
   Widget _heroCopy() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(30)),
-      child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.auto_awesome_rounded, color: Color(0xFFE3DEFF), size: 14), SizedBox(width: 7), Text('AI-POWERED VIDEO WORKFLOW', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.1))]),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0x33FFFFFF),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: const Color(0x55FFFFFF)),
+      ),
+      child: const Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.auto_awesome_rounded, color: Color(0xFFE4E0FF), size: 14),
+        SizedBox(width: 7),
+        Text('YOUR AI VIDEO WORKSPACE', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.25)),
+      ]),
     ),
-    const SizedBox(height: 14),
-    const Text('Your words.\nYour style.\nReady to publish.', style: TextStyle(fontSize: 25, height: 1.15, fontWeight: FontWeight.w900, letterSpacing: -0.8)),
-    const SizedBox(height: 10),
-    const Text('Generate animated captions in 100 Whisper-supported languages, review your transcript and export in the formats you need.', style: TextStyle(fontSize: 11, height: 1.55, color: Color(0xFFD0D1EB))),
     const SizedBox(height: 17),
-    FilledButton.icon(onPressed: _busy ? null : () => setState(() => _activePage = 1), icon: const Icon(Icons.play_arrow_rounded, size: 19), label: const Text('Start creating'), style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE7E4FF), foregroundColor: const Color(0xFF28254F), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12))),
+    const Text('Make every word\\nmove your story.', style: TextStyle(fontSize: 31, height: 1.12, fontWeight: FontWeight.w900, letterSpacing: -1.15)),
+    const SizedBox(height: 11),
+    const Text('Create expressive, word-level captions. Refine your transcript, explore creator insights and export every format from one focused workspace.', style: TextStyle(fontSize: 12, height: 1.65, color: Color(0xFFD4D7EE))),
+    const SizedBox(height: 19),
+    Wrap(spacing: 10, runSpacing: 10, children: [
+      FilledButton.icon(
+        onPressed: _busy ? null : () => setState(() => _activePage = 1),
+        icon: const Icon(Icons.play_arrow_rounded, size: 19),
+        label: const Text('Create a video'),
+        style: FilledButton.styleFrom(
+          backgroundColor: const Color(0xFFF0EEFF),
+          foregroundColor: const Color(0xFF28264F),
+          padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 13),
+          textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
+      OutlinedButton.icon(
+        onPressed: () => setState(() => _activePage = 2),
+        icon: const Icon(Icons.folder_open_rounded, size: 17),
+        label: const Text('Explore exports'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFFE4E1FF),
+          side: const BorderSide(color: Color(0x77D7D2FF)),
+          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+          textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
+    ]),
+    const SizedBox(height: 17),
+    Wrap(spacing: 13, runSpacing: 7, children: const [
+      _HeroFeature(icon: Icons.language_rounded, label: '100 languages'),
+      _HeroFeature(icon: Icons.graphic_eq_rounded, label: 'Word-level timing'),
+      _HeroFeature(icon: Icons.lock_outline_rounded, label: 'Local-first AI'),
+    ]),
   ]);
 
   Widget _heroArtwork() => Container(
-    width: 190,
-    height: 145,
-    decoration: BoxDecoration(color: const Color(0x337E75EF), borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0x557F77D9))),
+    width: 248,
+    height: 190,
+    clipBehavior: Clip.antiAlias,
+    decoration: BoxDecoration(
+      color: const Color(0x337F78E8),
+      borderRadius: BorderRadius.circular(23),
+      border: Border.all(color: const Color(0x667F83D8)),
+      boxShadow: const [BoxShadow(color: Color(0x443D4FC1), blurRadius: 30, offset: Offset(0, 10))],
+    ),
     child: Stack(alignment: Alignment.center, children: [
-      Container(width: 104, height: 104, decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0x337E75EF), border: Border.all(color: const Color(0x667D75EA)))),
-      Container(width: 72, height: 72, decoration: BoxDecoration(borderRadius: BorderRadius.circular(21), gradient: const LinearGradient(colors: [Color(0xFFA49AFF), Color(0xFF6558D5)]), boxShadow: const [BoxShadow(color: Color(0x665D54D3), blurRadius: 24)]), child: const Icon(Icons.closed_caption_rounded, color: Colors.white, size: 36)),
-      Positioned(top: 22, left: 23, child: _floatingTag('WORD LEVEL', Icons.text_fields_rounded)),
-      Positioned(bottom: 21, right: 13, child: _floatingTag('100 LANGS', Icons.language_rounded)),
+      Positioned(top: -42, right: -45, child: Container(width: 160, height: 160, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0x338C8AFF), width: 22)))),
+      Positioned(bottom: -50, left: -45, child: Container(width: 145, height: 145, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0x3355D4CB), width: 18)))),
+      Container(width: 132, height: 132, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0x558E8AFF), width: 1.2), color: const Color(0x227A73E8))),
+      Container(
+        width: 82,
+        height: 82,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(25),
+          gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFB6ACFF), Color(0xFF665BD1)]),
+          boxShadow: const [BoxShadow(color: Color(0x88645CD5), blurRadius: 30, offset: Offset(0, 9))],
+        ),
+        child: const Icon(Icons.closed_caption_rounded, color: Colors.white, size: 42),
+      ),
+      Positioned(top: 17, left: 14, child: _floatingTag('WORD LEVEL', Icons.text_fields_rounded)),
+      Positioned(bottom: 17, right: 12, child: _floatingTag('100 LANGS', Icons.language_rounded)),
+      Positioned(bottom: 14, left: 14, child: _floatingTag('AI READY', Icons.bolt_rounded)),
+      Positioned(top: 54, right: 15, child: Icon(Icons.auto_awesome, color: const Color(0xFFD7D2FF).withValues(alpha: 0.75), size: 18)),
     ]),
   );
 
@@ -959,16 +1211,39 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   );
 
   Widget _buildStatCard(String label, String value, IconData icon, Color accent, String note) => SizedBox(
-    width: 214,
-    child: _panel(padding: const EdgeInsets.all(15), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [Container(width: 34, height: 34, decoration: BoxDecoration(color: accent.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: accent, size: 18)), const Spacer(), const Icon(Icons.more_horiz_rounded, size: 17, color: Color(0xFF667690))]),
-      const SizedBox(height: 14),
-      Text(value, style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
-      const SizedBox(height: 3),
-      Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-      const SizedBox(height: 4),
-      Text(note, style: const TextStyle(fontSize: 9, color: Color(0xFF8492AA))),
-    ])),
+    width: 224,
+    child: AnimatedContainer(
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+      child: _panel(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [accent.withValues(alpha: 0.24), accent.withValues(alpha: 0.07)]),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: accent.withValues(alpha: 0.22)),
+              ),
+              child: Icon(icon, color: accent, size: 19),
+            ),
+            const Spacer(),
+            Container(width: 6, height: 6, decoration: BoxDecoration(color: accent, shape: BoxShape.circle, boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.55), blurRadius: 8)])),
+          ]),
+          const SizedBox(height: 15),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            child: Text(value, key: ValueKey(value), style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w900, letterSpacing: -0.8, color: Colors.white)),
+          ),
+          const SizedBox(height: 4),
+          Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFFE3E9F5))),
+          const SizedBox(height: 5),
+          Text(note, style: const TextStyle(fontSize: 9, color: Color(0xFF8797B0))),
+        ]),
+      ),
+    ),
   );
 
   Widget _buildRecentProjectPanel() => _panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
