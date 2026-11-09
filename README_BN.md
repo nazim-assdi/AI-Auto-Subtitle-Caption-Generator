@@ -4,6 +4,10 @@
 
 ## Windows Backend চালু করা
 
+**এক-ক্লিকে চালাতে:** প্রথমবার backend install ও Windows app build শেষ হলে repository root-এর `launch_windows.bat` double-click করো। এটি Backend health check করে, বন্ধ থাকলে Backend চালু করে, FFmpeg/ASS readiness নিশ্চিত হওয়ার পর app খুলবে।
+
+শুধু portable EXE আলাদাভাবে চালালে আগে `backend\\start_backend.bat` চালু রাখতে হবে।
+
 1. 64-bit Python 3.11 বা 3.12 ইনস্টল করো এবং Add Python to PATH নির্বাচন করো।
 2. FFmpeg ও FFprobe ইনস্টল করো। PowerShell-এ চালাতে পারো: winget install -e --id Gyan.FFmpeg.Shared
 3. backend ফোল্ডারে install_backend.bat চালাও।

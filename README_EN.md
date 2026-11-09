@@ -4,7 +4,7 @@ A local-first captioning workflow. The Flutter client uploads a video to a Windo
 
 Features: all 100 language codes exposed by the installed multilingual Whisper tokenizer; vocabulary hints; editable transcript and re-render; Creator Pulse metrics; six caption styles; Export Center for MP4, SRT, VTT, ASS, SSA, SBV, TXT, timed TXT, CSV, TSV, Excel XLSX, Word DOCX, Markdown, HTML and JSON; one ZIP containing all transcript exports; optional offline translation; Android and Windows clients.
 
-Backend setup: install Python 3.11/3.12 and FFmpeg/FFprobe, run backend/install_backend.bat, then backend/start_backend.bat. Open http://127.0.0.1:8000/health to check readiness. The first run downloads the selected Whisper model.
+Windows one-click launch: after first-time setup and app build, run repository-root `launch_windows.bat`; it starts/checks the local backend and opens the Windows app only after the API reports ready. If running the portable EXE directly, start `backend/start_backend.bat` first. Backend setup: install Python 3.11/3.12 and FFmpeg/FFprobe, run backend/install_backend.bat. Open http://127.0.0.1:8000/health to check readiness. The first run downloads the selected Whisper model.
 
 Processing diagnostics: press `Test` in the app. `GET /health` reports `ffmpeg_ready` and `ass_filter_ready`. Both must be true. If the ASS filter is missing, install a libass-enabled FFmpeg build (Windows: `winget install -e --id Gyan.FFmpeg.Shared`), open a new terminal and restart the backend. The app shows the detailed job error instead of silently placing a failure message in the server-status line.
 

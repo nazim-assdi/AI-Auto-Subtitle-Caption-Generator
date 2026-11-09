@@ -195,9 +195,8 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
 
     setState(() {
       _busy = true;
-      _serverOkay = false;
-      _progress = 0.02;
-      _stage = 'ভিডিও সার্ভারে আপলোড হচ্ছে...';
+      _progress = 0.01;
+      _stage = 'AI Backend সংযোগ পরীক্ষা হচ্ছে...';
       _error = null;
       _jobId = null;
       _transcriptPreview = null;
@@ -207,6 +206,28 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     await _disposePreview();
 
     try {
+      // Never upload a large video until the local FastAPI server and FFmpeg are ready.
+      final healthResponse = await http.get(_uri('/health')).timeout(const Duration(seconds: 10));
+      if (healthResponse.statusCode != 200) {
+        throw Exception('Backend health check ব্যর্থ হয়েছে (' + healthResponse.statusCode.toString() + ')।');
+      }
+      final health = _decodeJson(healthResponse.body);
+      if (health['ok'] != true) {
+        throw Exception('Backend service প্রস্তুত নয়। start_backend.bat চালু আছে কি না দেখো।');
+      }
+      if (health['ffmpeg_ready'] != true) {
+        throw Exception('FFmpeg অথবা FFprobe পাওয়া যায়নি। FFmpeg install করে নতুন Terminal থেকে start_backend.bat চালাও।');
+      }
+      if (health['ass_filter_ready'] != true) {
+        throw Exception('FFmpeg-এ ASS/libass subtitle renderer পাওয়া যায়নি। Gyan Shared FFmpeg install করে Backend restart করো।');
+      }
+      if (!mounted) return;
+      setState(() {
+        _serverOkay = true;
+        _serverStatusText = 'Server ready • FFmpeg ও subtitle renderer প্রস্তুত।';
+        _progress = 0.02;
+        _stage = 'ভিডিও সার্ভারে আপলোড হচ্ছে...';
+      });
       final request = http.MultipartRequest('POST', _uri('/jobs'));
       request.fields['language'] = _language;
       request.fields['model_size'] = _model;
@@ -227,10 +248,17 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       if (mounted) setState(() => _jobId = id);
       await _pollJob(id);
     } catch (e) {
+      final message = _friendlyError(e);
+      final connectionFailure = _isConnectionFailure(e);
       if (mounted) {
         setState(() {
-          _error = _friendlyError(e);
-          _stage = 'প্রসেসিং ব্যর্থ হয়েছে';
+          if (connectionFailure) {
+            _serverOkay = false;
+            _serverStatusText = message;
+          }
+          _error = message;
+          _progress = 0;
+          _stage = connectionFailure ? 'Backend সংযোগ পাওয়া যায়নি' : 'প্রসেসিং ব্যর্থ হয়েছে';
         });
       }
     } finally {
@@ -627,13 +655,24 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     }
   }
 
+  bool _isConnectionFailure(Object error) {
+    final value = error.toString().toLowerCase();
+    return value.contains('socketexception') ||
+        value.contains('connection refused') ||
+        value.contains('errno = 1225') ||
+        value.contains('failed host lookup') ||
+        value.contains('connection timed out');
+  }
+
   String _friendlyError(Object error) {
-    var text = error.toString().replaceFirst('Exception: ', '').trim();
-    if (text.contains('SocketException') || text.contains('Connection refused')) {
-      return 'সার্ভারে সংযোগ নেই। Backend চালু আছে কি না এবং API URL ঠিক আছে কি না দেখো।';
+    var message = error.toString().replaceFirst('Exception: ', '').trim();
+    if (_isConnectionFailure(error)) {
+      return 'Backend চালু নেই অথবা এই URL/port-এ সংযোগ গ্রহণ করছে না: ' + _baseUrl +
+          '\n\nWindows: repository-এর backend\\start_backend.bat চালাও এবং Terminal খোলা রাখো। প্রথমবার হলে আগে backend\\install_backend.bat চালাতে হবে। তারপর Test চাপো।' +
+          '\nAndroid: PC ও ফোন একই Wi-Fi-তে রাখো এবং Backend URL-এ PC-এর LAN IP দাও (যেমন http://192.168.0.105:8000)।';
     }
-    if (text.length > 700) text = '${text.substring(0, 700)}...';
-    return text;
+    if (message.length > 700) message = message.substring(0, 700) + '...';
+    return message;
   }
 
   void _showError(String message) {
