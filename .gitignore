@@ -1,0 +1,11 @@
+backend/.venv/
+backend/data/
+backend/__pycache__/
+flutter_app/.dart_tool/
+flutter_app/build/
+flutter_app/dist/
+flutter_app/android/.gradle/
+flutter_app/android/local.properties
+*.pyc
+__pycache__/
+.DS_Store
