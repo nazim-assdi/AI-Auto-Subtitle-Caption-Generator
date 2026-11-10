@@ -1356,9 +1356,11 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       final wide = constraints.maxWidth > 880;
       final source = _buildVideoSourcePanel();
       final settings = _buildCaptionSettingsPanel();
-      if (wide) return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(flex: 5, child: source), const SizedBox(width: 16), Expanded(flex: 6, child: settings),
-      ]);
+      if (wide) {
+        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(flex: 5, child: source), const SizedBox(width: 16), Expanded(flex: 6, child: settings),
+        ]);
+      }
       return Column(children: [source, const SizedBox(height: 14), settings]);
     }),
     const SizedBox(height: 16),
@@ -1400,7 +1402,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       ), child: Icon(complete ? Icons.check_rounded : Icons.circle_outlined, color: complete ? const Color(0xFF8BE6C5) : active ? const Color(0xFFCAC3FF) : const Color(0xFF8292AA), size: 17)),
       const SizedBox(width: 9),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('${number}  ${title}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFFE9EDF6))),
+        Text('$number  $title', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFFE9EDF6))),
         const SizedBox(height: 3),
         Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 9, color: Color(0xFF91A1B8))),
       ])),
