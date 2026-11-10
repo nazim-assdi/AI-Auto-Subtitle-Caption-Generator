@@ -45,6 +45,11 @@ PC ও ফোন একই Wi-Fi-তে রাখো। PC-তে ipconfig চ�
 
 ## Professional Creator Studio Dashboard
 
+- Create Project-এ guided 3-step workflow, source video card এবং ছয়টি clickable visual caption preset
+- Export Center-এ 16:9 video preview, responsive asset grid, format labels এবং ZIP project bundle
+- Settings-এ backend endpoint, connection diagnostics এবং runtime overview
+- Render status-এ animated progress, model ও language metadata
+
 - Desktop-এ animated professional left sidebar; Android/ছোট screen-এ floating bottom navigation dock
 - Gradient glass-style cards, ambient grid background, refined AI engine status pill, animated KPI ও page transitions
 - চারটি আলাদা workspace: Overview, New Project, Export Center, Settings

@@ -120,6 +120,18 @@ class _SoftGridPainter extends CustomPainter {
   bool shouldRepaint(covariant _SoftGridPainter oldDelegate) => false;
 }
 
+class _FormatChip extends StatelessWidget {
+  const _FormatChip(this.label);
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(color: const Color(0x33232F49), borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0x665A6786))),
+    child: Text(label, style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.5, color: Color(0xFFC0CBE0))),
+  );
+}
+
 class _HeroFeature extends StatelessWidget {
   const _HeroFeature({required this.icon, required this.label});
   final IconData icon;
@@ -1334,138 +1346,321 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   );
 
   Widget _buildCreatePage() => _pageFrame(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    _sectionHeading('New video project', 'Choose your source footage, then configure AI captions before rendering.'),
+    _eyebrow('CREATION WORKFLOW'),
+    const SizedBox(height: 8),
+    _sectionHeading('New video project', 'Build a publish-ready captioned video in three guided steps.'),
+    const SizedBox(height: 18),
+    _buildCreationStepper(),
     const SizedBox(height: 17),
     LayoutBuilder(builder: (context, constraints) {
-      final twoColumns = constraints.maxWidth > 880;
+      final wide = constraints.maxWidth > 880;
       final source = _buildVideoSourcePanel();
       final settings = _buildCaptionSettingsPanel();
-      if (twoColumns) return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: source), const SizedBox(width: 14), Expanded(child: settings)]);
+      if (wide) return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(flex: 5, child: source), const SizedBox(width: 16), Expanded(flex: 6, child: settings),
+      ]);
       return Column(children: [source, const SizedBox(height: 14), settings]);
     }),
-    const SizedBox(height: 15),
+    const SizedBox(height: 16),
     if (_busy || _jobId != null || _error != null) _buildProcessingPanel(),
-    const SizedBox(height: 3),
-    Row(children: [
-      const Icon(Icons.lock_outline_rounded, size: 14, color: Color(0xFF6F809A)),
-      const SizedBox(width: 7),
-      const Expanded(child: Text('Your local video is processed by your configured AI backend.', style: TextStyle(fontSize: 10, color: Color(0xFF7C8BA3)))),
-      if (_jobId != null && !_busy && _error == null) FilledButton.icon(onPressed: () => setState(() => _activePage = 2), icon: const Icon(Icons.file_download_outlined, size: 17), label: const Text('Go to exports')),
-    ]),
+    const SizedBox(height: 10),
+    _panel(padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12), child: Row(children: [
+      const Icon(Icons.shield_outlined, size: 17, color: Color(0xFF70D7C3)),
+      const SizedBox(width: 9),
+      const Expanded(child: Text('Your footage is processed by the AI backend you configure. No account sign-in is required.', style: TextStyle(fontSize: 10, color: Color(0xFF9AAAC0), height: 1.45))),
+      if (_jobId != null && !_busy && _error == null) FilledButton.tonalIcon(onPressed: () => setState(() => _activePage = 2), icon: const Icon(Icons.arrow_forward_rounded, size: 16), label: const Text('View exports')),
+    ])),
   ]));
 
+  Widget _buildCreationStepper() => LayoutBuilder(builder: (context, constraints) {
+    final compact = constraints.maxWidth < 650;
+    final steps = [
+      _creationStep('01', 'Add video', 'Choose source footage', _selectedFile != null, _selectedFile == null),
+      _creationStep('02', 'Configure', 'Language and caption style', false, _selectedFile != null && _jobId == null),
+      _creationStep('03', 'Generate', 'Render and export assets', _jobId != null && _error == null, _busy),
+    ];
+    return Wrap(spacing: 9, runSpacing: 9, children: steps.map((step) => SizedBox(
+      width: compact ? constraints.maxWidth : (constraints.maxWidth - 18) / 3,
+      child: step,
+    )).toList());
+  });
+
+  Widget _creationStep(String number, String title, String subtitle, bool complete, bool active) => AnimatedContainer(
+    duration: const Duration(milliseconds: 220),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+    decoration: BoxDecoration(
+      color: complete ? const Color(0xFF15352F) : active ? const Color(0xFF27264C) : const Color(0xFF111D30),
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: complete ? const Color(0xFF347A68) : active ? const Color(0xFF655CB1) : const Color(0xFF2C3B54)),
+    ),
+    child: Row(children: [
+      Container(width: 31, height: 31, decoration: BoxDecoration(
+        color: complete ? const Color(0xFF245B4C) : active ? const Color(0xFF494184) : const Color(0xFF1E2B40),
+        borderRadius: BorderRadius.circular(10),
+      ), child: Icon(complete ? Icons.check_rounded : Icons.circle_outlined, color: complete ? const Color(0xFF8BE6C5) : active ? const Color(0xFFCAC3FF) : const Color(0xFF8292AA), size: 17)),
+      const SizedBox(width: 9),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('${number}  ${title}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFFE9EDF6))),
+        const SizedBox(height: 3),
+        Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 9, color: Color(0xFF91A1B8))),
+      ])),
+    ]),
+  );
+
   Widget _buildVideoSourcePanel() => _panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    _sectionHeading('01  •  Source video', 'Select the footage you want to caption.'),
-    const SizedBox(height: 14),
+    Row(children: [
+      Expanded(child: _sectionHeading('Source video', 'Select the original footage for your project.')),
+      _miniStatusPill(_selectedFile == null ? 'NO FILE' : 'FILE ADDED', active: _selectedFile != null),
+    ]),
+    const SizedBox(height: 15),
     InkWell(
       onTap: _busy ? null : _pickVideo,
-      borderRadius: BorderRadius.circular(15),
-      child: Container(
+      borderRadius: BorderRadius.circular(18),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 25),
-        decoration: BoxDecoration(color: const Color(0xFF10192B), borderRadius: BorderRadius.circular(15), border: Border.all(color: const Color(0xFF3B4771), width: 1.2)),
+        padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 24),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: _selectedFile == null
+            ? const [Color(0xFF192742), Color(0xFF141F35)]
+            : const [Color(0xFF173A3A), Color(0xFF142B35)]),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: _selectedFile == null ? const Color(0xFF52618A) : const Color(0xFF3C8878), width: 1.1),
+        ),
         child: Column(children: [
-          Container(width: 48, height: 48, decoration: BoxDecoration(color: const Color(0xFF28264E), borderRadius: BorderRadius.circular(15)), child: const Icon(Icons.cloud_upload_rounded, color: Color(0xFFC3BBFF), size: 25)),
-          const SizedBox(height: 11),
-          Text(_selectedFile == null ? 'Choose a video file' : 'Replace selected video', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+          Container(width: 54, height: 54, decoration: BoxDecoration(
+            gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF958BFF), Color(0xFF5B57B5)]),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: const [BoxShadow(color: Color(0x445B57B5), blurRadius: 19, offset: Offset(0, 6))],
+          ), child: Icon(_selectedFile == null ? Icons.cloud_upload_rounded : Icons.movie_creation_rounded, color: Colors.white, size: 27)),
+          const SizedBox(height: 13),
+          Text(_selectedFile == null ? 'Add your source video' : 'Source video selected', textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFFF0F3FA))),
           const SizedBox(height: 5),
-          const Text('MP4  •  MOV  •  MKV  •  WEBM  •  AVI  •  M4V', textAlign: TextAlign.center, style: TextStyle(fontSize: 9, color: Color(0xFF8492AA), letterSpacing: 0.5)),
+          Text(_selectedFile == null ? 'Browse your device to add a file' : 'Choose another file to replace this source', textAlign: TextAlign.center, style: const TextStyle(fontSize: 10, color: Color(0xFF9EACC1))),
+          const SizedBox(height: 13),
+          OutlinedButton.icon(
+            onPressed: _busy ? null : _pickVideo,
+            icon: const Icon(Icons.folder_open_rounded, size: 16),
+            label: Text(_selectedFile == null ? 'Browse video files' : 'Replace video'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFFE4E0FF), side: const BorderSide(color: Color(0xFF7872B3)),
+              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
+              textStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
+            ),
+          ),
           const SizedBox(height: 10),
-          const Text('Browse files', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFFBDB5FF))),
+          const Wrap(alignment: WrapAlignment.center, spacing: 6, runSpacing: 6, children: [
+            _FormatChip('MP4'), _FormatChip('MOV'), _FormatChip('MKV'), _FormatChip('WEBM'), _FormatChip('AVI'),
+          ]),
         ]),
       ),
     ),
     if (_selectedFile != null) ...[
-      const SizedBox(height: 12),
+      const SizedBox(height: 13),
       Container(
         padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: const Color(0xFF1C2C40), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFF304B60))),
+        decoration: BoxDecoration(color: const Color(0xFF102A31), borderRadius: BorderRadius.circular(13), border: Border.all(color: const Color(0xFF2E645F))),
         child: Row(children: [
-          const Icon(Icons.movie_creation_rounded, color: Color(0xFF6DD7C1), size: 20),
+          Container(width: 37, height: 37, decoration: BoxDecoration(color: const Color(0xFF1E4548), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.video_file_rounded, color: Color(0xFF83DCC9), size: 20)),
           const SizedBox(width: 10),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(_selectedFile!.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11)), const SizedBox(height: 3), Text(_formatSize(_selectedFileSize ?? 0), style: const TextStyle(color: Color(0xFF8EA0B8), fontSize: 10))])),
-          IconButton(onPressed: _busy ? null : () => setState(() { _selectedFile = null; _selectedFileSize = null; }), icon: const Icon(Icons.close_rounded, size: 18), tooltip: 'Remove video'),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(_selectedFile!.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 10, color: Color(0xFFE8F3F2))),
+            const SizedBox(height: 3),
+            Text(_formatSize(_selectedFileSize ?? 0), style: const TextStyle(color: Color(0xFF91B9B2), fontSize: 9)),
+          ])),
+          IconButton(onPressed: _busy ? null : () => setState(() { _selectedFile = null; _selectedFileSize = null; }), icon: const Icon(Icons.close_rounded, size: 17), tooltip: 'Remove video'),
         ]),
       ),
     ],
+    const SizedBox(height: 12),
+    const Row(children: [
+      Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFF8495AE)),
+      SizedBox(width: 7),
+      Expanded(child: Text('For best results, use clear speech and avoid heavily distorted audio.', style: TextStyle(fontSize: 9, color: Color(0xFF8495AE), height: 1.4))),
+    ]),
   ]));
 
+  Widget _miniStatusPill(String label, {bool active = false}) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+    decoration: BoxDecoration(
+      color: active ? const Color(0xFF15382F) : const Color(0xFF202C42),
+      borderRadius: BorderRadius.circular(30),
+      border: Border.all(color: active ? const Color(0xFF347764) : const Color(0xFF35455F)),
+    ),
+    child: Text(label, style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.8, color: active ? const Color(0xFF89E3C1) : const Color(0xFF98A8BF))),
+  );
+
   Widget _buildCaptionSettingsPanel() => _panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    _sectionHeading('02  •  Caption settings', 'Fine-tune language detection and visual style.'),
-    const SizedBox(height: 14),
+    Row(children: [
+      Expanded(child: _sectionHeading('Caption settings', 'Fine-tune recognition and the visual language of your captions.')),
+      _miniStatusPill('AI OPTIONS', active: true),
+    ]),
+    const SizedBox(height: 15),
+    _fieldGroupLabel('RECOGNITION LANGUAGE', 'Search or select the spoken language.'),
     DropdownMenu<String>(
-      initialSelection: _language,
-      enableFilter: true,
-      enableSearch: true,
-      requestFocusOnTap: true,
-      expandedInsets: EdgeInsets.zero,
-      label: const Text('Language'),
-      leadingIcon: const Icon(Icons.language_rounded),
+      initialSelection: _language, enableFilter: true, enableSearch: true, requestFocusOnTap: true,
+      expandedInsets: EdgeInsets.zero, label: const Text('Language'), leadingIcon: const Icon(Icons.language_rounded),
       dropdownMenuEntries: _availableLanguages.map((item) => DropdownMenuEntry<String>(value: item['code']!, label: '${item['name']} (${item['code']})')).toList(),
       onSelected: _busy ? null : (value) => setState(() => _language = value ?? 'auto'),
     ),
-    const SizedBox(height: 12),
+    const SizedBox(height: 16),
+    _fieldGroupLabel('TRANSCRIPTION ENGINE', 'Choose the balance between speed and accuracy.'),
     _dropdown<String>(label: 'Whisper model', value: _model, values: const [
       DropdownMenuItem(value: 'tiny', child: Text('Tiny  •  Fastest')),
       DropdownMenuItem(value: 'base', child: Text('Base  •  Recommended')),
       DropdownMenuItem(value: 'small', child: Text('Small  •  Higher accuracy')),
-    ], onChanged: (value) => setState(() => _model = value ?? 'base')),
-    const SizedBox(height: 12),
-    _dropdown<String>(label: 'Caption theme', value: _style, values: const [
-      DropdownMenuItem(value: 'hormozi', child: Text('Hormozi  •  Yellow word highlight')),
-      DropdownMenuItem(value: 'clean', child: Text('Clean  •  Cyan highlight')),
-      DropdownMenuItem(value: 'neon', child: Text('Neon  •  Purple highlight')),
-      DropdownMenuItem(value: 'creator', child: Text('Creator  •  Mint highlight')),
-      DropdownMenuItem(value: 'cinema', child: Text('Cinema  •  Blue highlight')),
-      DropdownMenuItem(value: 'minimal', child: Text('Minimal  •  White subtitle')),
-    ], onChanged: (value) => setState(() => _style = value ?? 'hormozi')),
-    const SizedBox(height: 12),
+    ], onChanged: _busy ? null : (value) => setState(() => _model = value ?? 'base')),
+    const SizedBox(height: 17),
+    _fieldGroupLabel('CAPTION APPEARANCE', 'Choose the visual treatment for your finished video.'),
+    LayoutBuilder(builder: (context, constraints) {
+      final columns = constraints.maxWidth > 590 ? 3 : 2;
+      final width = (constraints.maxWidth - (columns - 1) * 9) / columns;
+      return Wrap(spacing: 9, runSpacing: 9, children: [
+        SizedBox(width: width, child: _captionStyleCard('hormozi', 'Hormozi', 'Yellow highlight', const Color(0xFFFFD24D), Icons.bolt_rounded)),
+        SizedBox(width: width, child: _captionStyleCard('clean', 'Clean', 'Cyan highlight', const Color(0xFF56D9E8), Icons.water_drop_outlined)),
+        SizedBox(width: width, child: _captionStyleCard('neon', 'Neon', 'Violet highlight', const Color(0xFFC29AFF), Icons.auto_awesome_rounded)),
+        SizedBox(width: width, child: _captionStyleCard('creator', 'Creator', 'Mint highlight', const Color(0xFF72DDB4), Icons.graphic_eq_rounded)),
+        SizedBox(width: width, child: _captionStyleCard('cinema', 'Cinema', 'Blue highlight', const Color(0xFF77AFFF), Icons.local_movies_outlined)),
+        SizedBox(width: width, child: _captionStyleCard('minimal', 'Minimal', 'White captions', const Color(0xFFE1E8F2), Icons.notes_rounded)),
+      ]);
+    }),
+    const SizedBox(height: 17),
+    _fieldGroupLabel('CREATOR VOCABULARY', 'Optional hints for names, brands and specialist terms.'),
     TextField(controller: _hotwordsController, enabled: !_busy, maxLength: 1000, decoration: const InputDecoration(
-      labelText: 'Creator vocabulary boost',
-      hintText: 'Names, brands, technical words',
-      prefixIcon: Icon(Icons.auto_fix_high_rounded),
-      helperText: 'Optional hints for names and uncommon words.',
-      counterText: '',
+      labelText: 'Words to recognise accurately',
+      hintText: 'e.g. product names, people, technical terms',
+      prefixIcon: Icon(Icons.auto_fix_high_rounded), counterText: '',
     )),
-    const SizedBox(height: 12),
+    const SizedBox(height: 16),
+    _fieldGroupLabel('CAPTION LAYOUT', 'Control line length and on-screen placement.'),
     Row(children: [
       Expanded(child: _dropdown<int>(
-        label: 'Words per line',
-        value: _wordsPerLine,
+        label: 'Words per line', value: _wordsPerLine,
         values: List.generate(7, (i) => DropdownMenuItem(value: i + 2, child: Text('${i + 2} words'))),
-        onChanged: (value) => setState(() => _wordsPerLine = value ?? 4),
+        onChanged: _busy ? null : (value) => setState(() => _wordsPerLine = value ?? 4),
       )),
       const SizedBox(width: 10),
       Expanded(child: _dropdown<String>(
-        label: 'Caption position',
-        value: _position,
+        label: 'Caption position', value: _position,
         values: const [
           DropdownMenuItem(value: 'bottom', child: Text('Bottom safe zone')),
           DropdownMenuItem(value: 'top', child: Text('Top safe zone')),
           DropdownMenuItem(value: 'middle', child: Text('Middle')),
         ],
-        onChanged: (value) => setState(() => _position = value ?? 'bottom'),
+        onChanged: _busy ? null : (value) => setState(() => _position = value ?? 'bottom'),
       )),
     ]),
-    const SizedBox(height: 14),
-    SizedBox(width: double.infinity, child: FilledButton.icon(
-      onPressed: _busy ? null : _createCaptions,
-      icon: _busy ? const SizedBox(width: 17, height: 17, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.auto_awesome_rounded, size: 18),
-      label: Text(_busy ? 'Generating captions...' : 'Generate AI captions'),
-      style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48), backgroundColor: const Color(0xFF766BE7), foregroundColor: Colors.white, textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-    )),
+    const SizedBox(height: 17),
+    Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: const Color(0xFF111D31), borderRadius: BorderRadius.circular(13), border: Border.all(color: const Color(0xFF34435D))),
+      child: Row(children: [
+        const Icon(Icons.auto_awesome_rounded, color: Color(0xFFB9AEFF), size: 19),
+        const SizedBox(width: 10),
+        const Expanded(child: Text('Ready to turn your speech into polished captions?', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFFCBD4E4)))),
+        FilledButton.icon(
+          onPressed: _busy ? null : _createCaptions,
+          icon: _busy ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.play_arrow_rounded, size: 16),
+          label: Text(_busy ? 'Rendering' : 'Generate'),
+          style: FilledButton.styleFrom(backgroundColor: const Color(0xFF766BE7), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11), textStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+        ),
+      ]),
+    ),
   ]));
+
+  Widget _fieldGroupLabel(String title, String subtitle) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(title, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.0, color: Color(0xFFAFA6FF))),
+      const SizedBox(height: 3),
+      Text(subtitle, style: const TextStyle(fontSize: 9, color: Color(0xFF8798B1), height: 1.35)),
+    ]),
+  );
+
+  Widget _captionStyleCard(String value, String title, String subtitle, Color accent, IconData icon) {
+    final selected = _style == value;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(13),
+      child: InkWell(
+        onTap: _busy ? null : () => setState(() => _style = value),
+        borderRadius: BorderRadius.circular(13),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(colors: selected ? [accent.withValues(alpha: 0.18), const Color(0xFF18243A)] : const [Color(0xFF101B2D), Color(0xFF121E31)]),
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(color: selected ? accent.withValues(alpha: 0.75) : const Color(0xFF2D3D56), width: selected ? 1.35 : 0.8),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Container(width: 27, height: 27, decoration: BoxDecoration(color: accent.withValues(alpha: 0.17), borderRadius: BorderRadius.circular(8)), child: Icon(icon, color: accent, size: 15)),
+              const Spacer(),
+              if (selected) Icon(Icons.check_circle_rounded, color: accent, size: 15),
+            ]),
+            const SizedBox(height: 9),
+            Text(title, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: selected ? Colors.white : const Color(0xFFD4DDED))),
+            const SizedBox(height: 3),
+            Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 8, color: Color(0xFF8A9AB2))),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: Container(height: 4, decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(4)))),
+              const SizedBox(width: 4),
+              Expanded(child: Container(height: 4, decoration: BoxDecoration(color: accent.withValues(alpha: 0.45), borderRadius: BorderRadius.circular(4)))),
+              const SizedBox(width: 4),
+              Expanded(child: Container(height: 4, decoration: BoxDecoration(color: accent.withValues(alpha: 0.20), borderRadius: BorderRadius.circular(4)))),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
 
   Widget _buildProcessingPanel() => _panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Row(children: [
-      Container(width: 35, height: 35, decoration: BoxDecoration(color: const Color(0xFF28264E), borderRadius: BorderRadius.circular(11)), child: const Icon(Icons.memory_rounded, color: Color(0xFFBDB5FF), size: 18)),
-      const SizedBox(width: 10),
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('Render status', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900)), Text(_stage, style: const TextStyle(fontSize: 10, color: Color(0xFF92A1B9)), maxLines: 2, overflow: TextOverflow.ellipsis)])),
-      Text('${(_progress * 100).round()}%', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFFC3BBFF))),
+      Container(
+        width: 39,
+        height: 39,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF958BFF), Color(0xFF5551AB)]),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(_error != null ? Icons.warning_amber_rounded : _jobId != null && !_busy ? Icons.check_rounded : Icons.memory_rounded, color: Colors.white, size: 20),
+      ),
+      const SizedBox(width: 11),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('AI render pipeline', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 3),
+        Text(_stage, style: const TextStyle(fontSize: 9, color: Color(0xFF92A1B9)), maxLines: 2, overflow: TextOverflow.ellipsis),
+      ])),
+      const SizedBox(width: 8),
+      _miniStatusPill(_error != null ? 'ATTENTION' : _busy ? 'PROCESSING' : 'COMPLETE', active: _error == null && !_busy && _jobId != null),
+      const SizedBox(width: 7),
+      Text('${(_progress * 100).round()}%', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFFC3BBFF))),
     ]),
-    const SizedBox(height: 14),
-    ClipRRect(borderRadius: BorderRadius.circular(10), child: LinearProgressIndicator(minHeight: 8, value: _busy ? _progress : (_jobId != null && _error == null ? 1 : 0), backgroundColor: const Color(0xFF28354C), color: _error != null ? const Color(0xFFE77783) : const Color(0xFF7B70ED))),
-    if (_detectedLanguage != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text('Detected language: $_detectedLanguage', style: const TextStyle(fontSize: 10, color: Color(0xFF8E9DB4)))),
+    const SizedBox(height: 15),
+    ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: _busy ? _progress : (_jobId != null && _error == null ? 1 : 0)),
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+        builder: (context, value, child) => LinearProgressIndicator(
+          minHeight: 8,
+          value: value,
+          backgroundColor: const Color(0xFF28354C),
+          valueColor: AlwaysStoppedAnimation<Color>(_error != null ? const Color(0xFFE77783) : const Color(0xFF8C80F5)),
+        ),
+      ),
+    ),
+    const SizedBox(height: 12),
+    Wrap(spacing: 8, runSpacing: 8, children: [
+      _metricChip('MODEL', _model.toUpperCase()),
+      _metricChip('LANGUAGE', _language == 'auto' ? 'AUTO' : _language.toUpperCase()),
+      if (_detectedLanguage != null) _metricChip('DETECTED', _detectedLanguage!.toUpperCase()),
+    ]),
     if (_error != null) ...[
       const SizedBox(height: 12),
       Container(
@@ -1474,61 +1669,156 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Icon(Icons.error_outline_rounded, color: Color(0xFFFF8997), size: 18),
           const SizedBox(width: 9),
-          Expanded(child: Text(_error!, style: const TextStyle(fontSize: 11, color: Color(0xFFFFB4BE), height: 1.5))),
+          Expanded(child: Text(_error!, style: const TextStyle(fontSize: 10, color: Color(0xFFFFB4BE), height: 1.5))),
         ]),
       ),
     ],
     if (_jobId != null && !_busy && _error == null) ...[
       const SizedBox(height: 12),
-      Align(alignment: Alignment.centerRight, child: FilledButton.tonalIcon(onPressed: () => setState(() => _activePage = 2), icon: const Icon(Icons.file_download_outlined, size: 17), label: const Text('Open export center'))),
+      Align(alignment: Alignment.centerRight, child: FilledButton.tonalIcon(onPressed: () => setState(() => _activePage = 2), icon: const Icon(Icons.file_download_outlined, size: 16), label: const Text('Open export center'))),
     ],
   ]));
 
   Widget _buildExportPage() => _pageFrame(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    _sectionHeading('Export center', 'All your finished assets, organised and ready to download.'),
-    const SizedBox(height: 17),
-    if (_jobId == null || _error != null) _panel(child: Center(child: Padding(padding: const EdgeInsets.symmetric(vertical: 34, horizontal: 12), child: Column(children: [
-      Container(width: 58, height: 58, decoration: BoxDecoration(color: const Color(0xFF26254D), borderRadius: BorderRadius.circular(18)), child: const Icon(Icons.inventory_2_outlined, color: Color(0xFFB8AEFF), size: 27)),
-      const SizedBox(height: 13),
-      const Text('Your export library is empty', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
-      const SizedBox(height: 5),
-      const Text('Create a captioned video first. Your downloads will appear here.', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: Color(0xFF8D9BB2))),
-      const SizedBox(height: 15),
-      FilledButton.icon(onPressed: () => setState(() => _activePage = 1), icon: const Icon(Icons.add_rounded), label: const Text('Create a project')),
-    ]))))
-    else LayoutBuilder(builder: (context, constraints) {
-      final twoColumns = constraints.maxWidth > 960;
-      final preview = _buildPreviewPanel();
-      final downloads = _buildDownloadsPanel();
-      if (twoColumns) return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(flex: 6, child: Column(children: [preview, const SizedBox(height: 14), _buildCreatorPulsePanel()])), const SizedBox(width: 15), Expanded(flex: 5, child: downloads)]);
-      return Column(children: [preview, const SizedBox(height: 14), downloads, const SizedBox(height: 14), _buildCreatorPulsePanel()]);
-    }),
+    _eyebrow('DELIVERY & ASSET LIBRARY'),
+    const SizedBox(height: 8),
+    _sectionHeading('Export center', 'Review your finished video and download production-ready assets.'),
+    const SizedBox(height: 18),
+    if (_jobId == null || _error != null)
+      _buildEmptyExportState()
+    else
+      LayoutBuilder(builder: (context, constraints) {
+        final twoColumns = constraints.maxWidth > 960;
+        final preview = _buildPreviewPanel();
+        final downloads = _buildDownloadsPanel();
+        if (twoColumns) {
+          return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(flex: 6, child: Column(children: [preview, const SizedBox(height: 14), _buildCreatorPulsePanel()])),
+            const SizedBox(width: 16),
+            Expanded(flex: 5, child: downloads),
+          ]);
+        }
+        return Column(children: [preview, const SizedBox(height: 14), downloads, const SizedBox(height: 14), _buildCreatorPulsePanel()]);
+      }),
   ]));
 
-  Widget _buildPreviewPanel() => _panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    _sectionHeading('Video preview', 'Review your rendered captions before publishing.'),
-    const SizedBox(height: 13),
-    if (_videoController != null) ClipRRect(borderRadius: BorderRadius.circular(13), child: Container(height: 300, width: double.infinity, color: Colors.black, alignment: Alignment.center, child: Video(controller: _videoController!)))
-    else Container(width: double.infinity, height: 150, decoration: BoxDecoration(color: const Color(0xFF10192B), borderRadius: BorderRadius.circular(13)), child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.movie_creation_outlined, color: Color(0xFF8796B1), size: 31), SizedBox(height: 8), Text('Preview unavailable', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11)), Text('You can still download the rendered video.', style: TextStyle(color: Color(0xFF7F8EA6), fontSize: 9))])),
-    const SizedBox(height: 11),
-    Row(children: [
-      if (_videoController != null) ...[IconButton.filledTonal(onPressed: () => _player?.play(), icon: const Icon(Icons.play_arrow_rounded)), const SizedBox(width: 5), IconButton.filledTonal(onPressed: () => _player?.pause(), icon: const Icon(Icons.pause_rounded))],
-      const Spacer(),
-      FilledButton.icon(onPressed: _busy ? null : _saveVideo, icon: const Icon(Icons.download_rounded, size: 17), label: const Text('Download MP4'), style: FilledButton.styleFrom(backgroundColor: const Color(0xFF766BE7))),
+  Widget _buildEmptyExportState() => Column(children: [
+    _panel(
+      padding: const EdgeInsets.fromLTRB(20, 27, 20, 25),
+      child: Column(children: [
+        Container(
+          width: 68,
+          height: 68,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF8278E8), Color(0xFF45468F)]),
+            borderRadius: BorderRadius.circular(21),
+            boxShadow: const [BoxShadow(color: Color(0x554C4AAB), blurRadius: 25, offset: Offset(0, 8))],
+          ),
+          child: const Icon(Icons.inventory_2_rounded, color: Colors.white, size: 31),
+        ),
+        const SizedBox(height: 16),
+        const Text('Your asset library is ready', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, letterSpacing: -0.35)),
+        const SizedBox(height: 6),
+        const ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 430),
+          child: Text('Create your first captioned video. Your MP4, subtitles, documents and creator insights will be organised here automatically.', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: Color(0xFF9AAAC0), height: 1.55)),
+        ),
+        const SizedBox(height: 18),
+        FilledButton.icon(
+          onPressed: () => setState(() => _activePage = 1),
+          icon: const Icon(Icons.add_rounded, size: 18),
+          label: const Text('Create your first project'),
+          style: FilledButton.styleFrom(backgroundColor: const Color(0xFF786EE5), padding: const EdgeInsets.symmetric(horizontal: 19, vertical: 13), textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+        ),
+      ]),
+    ),
+    const SizedBox(height: 14),
+    LayoutBuilder(builder: (context, constraints) {
+      final wide = constraints.maxWidth > 660;
+      final cards = [
+        _assetTypeCard(Icons.movie_creation_outlined, 'Video', 'Rendered MP4 with captions', const Color(0xFF76D9C2)),
+        _assetTypeCard(Icons.subtitles_rounded, 'Subtitles', 'SRT, VTT, ASS and more', const Color(0xFFB4A8FF)),
+        _assetTypeCard(Icons.table_chart_rounded, 'Documents', 'Excel, Word and text exports', const Color(0xFFF0BE7E)),
+      ];
+      if (wide) return Row(children: cards.map((card) => Expanded(child: Padding(padding: const EdgeInsets.only(right: 10), child: card))).toList());
+      return Column(children: cards.map((card) => Padding(padding: const EdgeInsets.only(bottom: 9), child: card)).toList());
+    }),
+  ]);
+
+  Widget _assetTypeCard(IconData icon, String title, String detail, Color accent) => _panel(
+    padding: const EdgeInsets.all(14),
+    child: Row(children: [
+      Container(width: 36, height: 36, decoration: BoxDecoration(color: accent.withValues(alpha: 0.13), borderRadius: BorderRadius.circular(11)), child: Icon(icon, color: accent, size: 19)),
+      const SizedBox(width: 10),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 3),
+        Text(detail, style: const TextStyle(fontSize: 8, color: Color(0xFF8C9CB3), height: 1.35)),
+      ])),
     ]),
-    if (_detectedLanguage != null) Padding(padding: const EdgeInsets.only(top: 9), child: Text('Detected language: $_detectedLanguage', style: const TextStyle(fontSize: 10, color: Color(0xFF90A0BA)))),
+  );
+
+  Widget _buildPreviewPanel() => _panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Row(children: [
+      Expanded(child: _sectionHeading('Rendered video', 'Preview the final caption treatment before publishing.')),
+      _miniStatusPill('MP4 OUTPUT', active: true),
+    ]),
+    const SizedBox(height: 14),
+    ClipRRect(
+      borderRadius: BorderRadius.circular(15),
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: Container(
+          width: double.infinity,
+          color: Colors.black,
+          alignment: Alignment.center,
+          child: _videoController != null
+              ? Video(controller: _videoController!)
+              : const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(Icons.movie_creation_outlined, color: Color(0xFF8796B1), size: 33),
+                  SizedBox(height: 9),
+                  Text('Preview unavailable', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11)),
+                  SizedBox(height: 4),
+                  Text('Your rendered MP4 can still be downloaded.', style: TextStyle(color: Color(0xFF7F8EA6), fontSize: 9)),
+                ]),
+        ),
+      ),
+    ),
+    const SizedBox(height: 13),
+    Row(children: [
+      if (_videoController != null) ...[
+        IconButton.filledTonal(onPressed: () => _player?.play(), icon: const Icon(Icons.play_arrow_rounded)),
+        const SizedBox(width: 5),
+        IconButton.filledTonal(onPressed: () => _player?.pause(), icon: const Icon(Icons.pause_rounded)),
+      ],
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(_selectedFile?.name ?? 'Captioned video', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800)),
+        if (_detectedLanguage != null) Text('Detected language: $_detectedLanguage', style: const TextStyle(fontSize: 8, color: Color(0xFF8E9DB4))),
+      ])),
+      const SizedBox(width: 8),
+      FilledButton.icon(
+        onPressed: _busy ? null : _saveVideo,
+        icon: const Icon(Icons.download_rounded, size: 16),
+        label: const Text('Download MP4'),
+        style: FilledButton.styleFrom(backgroundColor: const Color(0xFF766BE7), padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11), textStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+      ),
+    ]),
     if (_transcriptPreview != null && _transcriptPreview!.isNotEmpty) ...[
-      const Divider(height: 22, color: Color(0xFF2B3A52)),
-      const Text('Transcript preview', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11)),
-      const SizedBox(height: 7),
-      Text(_transcriptPreview!, maxLines: 6, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFFAAB6C9), height: 1.5, fontSize: 10)),
-      Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: _editTranscript, icon: const Icon(Icons.edit_note, size: 17), label: const Text('Edit transcript'))),
+      const Divider(height: 23, color: Color(0xFF2B3A52)),
+      Row(children: [
+        const Expanded(child: Text('Transcript preview', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11))),
+        TextButton.icon(onPressed: _editTranscript, icon: const Icon(Icons.edit_note, size: 16), label: const Text('Edit')),
+      ]),
+      Text(_transcriptPreview!, maxLines: 6, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFFAAB6C9), height: 1.55, fontSize: 10)),
     ],
   ]));
 
   Widget _buildDownloadsPanel() => _panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    _sectionHeading('Download files', 'Choose a format or take everything in one bundle.', trailing: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5), decoration: BoxDecoration(color: const Color(0xFF1F3B36), borderRadius: BorderRadius.circular(20)), child: const Text('READY', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900, color: Color(0xFF7AE1B8), letterSpacing: 1)))),
-    const SizedBox(height: 14),
+    Row(children: [
+      Expanded(child: _sectionHeading('Download assets', 'Choose an individual format or export the full bundle.')),
+      _miniStatusPill('READY', active: true),
+    ]),
+    const SizedBox(height: 15),
     _exportGroup('SUBTITLE FORMATS', [
       _exportTile('SRT subtitle', 'Universal subtitle file', Icons.subtitles_rounded, 'srt'),
       _exportTile('WebVTT', 'Web video captions', Icons.closed_caption_rounded, 'vtt'),
@@ -1537,61 +1827,108 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     ]),
     const SizedBox(height: 17),
     _exportGroup('DOCUMENTS & DATA', [
-      _exportTile('Excel workbook', 'Captions, word timing & insights', Icons.table_chart_rounded, 'xlsx'),
-      _exportTile('Word document', 'Formatted transcript table', Icons.description_rounded, 'docx'),
+      _exportTile('Excel workbook', 'Captions, word timing and insights', Icons.table_chart_rounded, 'xlsx'),
+      _exportTile('Word document', 'Formatted transcript', Icons.description_rounded, 'docx'),
       _exportTile('CSV spreadsheet', 'Comma-separated data', Icons.grid_on_rounded, 'csv'),
       _exportTile('TSV spreadsheet', 'Tab-separated data', Icons.view_week_rounded, 'tsv'),
-      _exportTile('Plain text', 'Transcript without styling', Icons.notes_rounded, 'txt'),
-      _exportTile('Timecoded text', 'Text with timestamps', Icons.schedule_rounded, 'timecoded-txt'),
+      _exportTile('Plain text', 'Clean transcript', Icons.notes_rounded, 'txt'),
+      _exportTile('Timecoded text', 'Transcript with timestamps', Icons.schedule_rounded, 'timecoded-txt'),
       _exportTile('Markdown / HTML', 'Portable formatted transcript', Icons.code_rounded, 'md'),
       _exportTile('Project JSON', 'Structured transcript data', Icons.data_object_rounded, 'json'),
       _exportTile('Creator report', 'Creator Pulse metrics', Icons.insights_rounded, 'insights'),
     ]),
-    const SizedBox(height: 17),
+    const SizedBox(height: 16),
     Container(
-      padding: const EdgeInsets.all(13),
-      decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFF302D62), Color(0xFF202B45)]), borderRadius: BorderRadius.circular(13), border: Border.all(color: const Color(0xFF4A4587))),
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF34316C), Color(0xFF202B45)]),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: const Color(0xFF514B8F)),
+      ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [const Icon(Icons.folder_zip_rounded, color: Color(0xFFC5BBFF), size: 20), const SizedBox(width: 9), const Expanded(child: Text('Complete export bundle', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900))), const Text('ZIP', style: TextStyle(fontSize: 9, color: Color(0xFFD4CEFF), fontWeight: FontWeight.w900))]),
-        const SizedBox(height: 5),
-        const Text('All subtitle, spreadsheet, document and text files in one download.', style: TextStyle(fontSize: 10, color: Color(0xFFC5C5E0), height: 1.4)),
-        const SizedBox(height: 10),
-        SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: () => _saveExport('all-exports'), icon: const Icon(Icons.download_rounded, size: 16), label: const Text('Download all exports'))),
+        Row(children: [
+          Container(width: 34, height: 34, decoration: BoxDecoration(color: const Color(0xFF6A60C2).withValues(alpha: 0.34), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.folder_zip_rounded, color: Color(0xFFD1CBFF), size: 19)),
+          const SizedBox(width: 10),
+          const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Complete project bundle', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
+            SizedBox(height: 3),
+            Text('All available exports in one ZIP file', style: TextStyle(fontSize: 8, color: Color(0xFFC2C6DE))),
+          ])),
+          const Text('ZIP', style: TextStyle(fontSize: 9, color: Color(0xFFE0DCFF), fontWeight: FontWeight.w900, letterSpacing: 1)),
+        ]),
+        const SizedBox(height: 12),
+        SizedBox(width: double.infinity, child: FilledButton.icon(
+          onPressed: _busy ? null : () => _saveExport('all-exports'),
+          icon: const Icon(Icons.download_rounded, size: 16),
+          label: const Text('Download all assets'),
+          style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE5E1FF), foregroundColor: const Color(0xFF29264F), padding: const EdgeInsets.symmetric(vertical: 12), textStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+        )),
       ]),
     ),
     if (_translationTarget != null) ...[
-      const SizedBox(height: 16),
+      const SizedBox(height: 17),
       _exportGroup('TRANSLATED CAPTIONS  •  $_translationTarget', [
         _exportTile('Translated SRT', 'Translated subtitle file', Icons.translate_rounded, 'translated-srt'),
         _exportTile('Translated VTT', 'Translated WebVTT', Icons.closed_caption_rounded, 'translated-vtt'),
-        _exportTile('Bilingual SRT', 'Original + translated captions', Icons.language_rounded, 'bilingual-srt'),
+        _exportTile('Bilingual SRT', 'Original and translated captions', Icons.language_rounded, 'bilingual-srt'),
         _exportTile('Translation JSON', 'Translated segment data', Icons.data_object_rounded, 'translation-json'),
       ]),
     ],
-    const SizedBox(height: 14),
-    OutlinedButton.icon(onPressed: _translateSubtitles, icon: const Icon(Icons.translate_rounded), label: const Text('Translate subtitles offline')),
+    const SizedBox(height: 12),
+    OutlinedButton.icon(onPressed: _translateSubtitles, icon: const Icon(Icons.translate_rounded, size: 16), label: const Text('Translate subtitles')),
   ]));
 
   Widget _exportGroup(String title, List<Widget> items) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     _eyebrow(title),
-    const SizedBox(height: 8),
-    ...items,
+    const SizedBox(height: 9),
+    LayoutBuilder(builder: (context, constraints) {
+      final columns = constraints.maxWidth > 610 ? 2 : 1;
+      final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
+      return Wrap(spacing: 10, runSpacing: 9, children: items.map((item) => SizedBox(width: width, child: item)).toList());
+    }),
   ]);
 
-  Widget _exportTile(String title, String subtitle, IconData icon, String kind) => Padding(
-    padding: const EdgeInsets.only(bottom: 7),
-    child: Material(
-      color: const Color(0xFF10192B),
-      borderRadius: BorderRadius.circular(11),
-      child: InkWell(
-        onTap: _busy ? null : () => _saveExport(kind),
-        borderRadius: BorderRadius.circular(11),
-        child: Padding(padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10), child: Row(children: [
-          Icon(icon, size: 17, color: const Color(0xFFB5ACFF)),
-          const SizedBox(width: 10),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800)), const SizedBox(height: 2), Text(subtitle, style: const TextStyle(fontSize: 9, color: Color(0xFF8796AD)))])),
-          const Icon(Icons.download_outlined, size: 16, color: Color(0xFF8E9BB2)),
-        ])),
+  String _exportFormatLabel(String kind) => switch (kind) {
+    'all-exports' => 'ZIP',
+    'timecoded-txt' => 'TXT',
+    'translated-srt' => 'SRT',
+    'translated-vtt' => 'VTT',
+    'bilingual-srt' => 'SRT',
+    'translation-json' => 'JSON',
+    'insights' => 'DATA',
+    'md' => 'MD',
+    _ => kind.toUpperCase(),
+  };
+
+  Widget _exportTile(String title, String subtitle, IconData icon, String kind) => Material(
+    color: Colors.transparent,
+    borderRadius: BorderRadius.circular(13),
+    child: InkWell(
+      onTap: _busy ? null : () => _saveExport(kind),
+      borderRadius: BorderRadius.circular(13),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 170),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 11),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF18253A), Color(0xFF111D30)]),
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(color: const Color(0xFF30415C)),
+        ),
+        child: Row(children: [
+          Container(width: 34, height: 36, decoration: BoxDecoration(color: const Color(0xFF39346E), borderRadius: BorderRadius.circular(9)), child: Icon(icon, size: 17, color: const Color(0xFFC4BCFF))),
+          const SizedBox(width: 9),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Color(0xFFE6ECF6))),
+            const SizedBox(height: 3),
+            Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 8, color: Color(0xFF8B9CB4))),
+          ])),
+          const SizedBox(width: 7),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(_exportFormatLabel(kind), style: const TextStyle(fontSize: 8, letterSpacing: 0.5, fontWeight: FontWeight.w900, color: Color(0xFFB7AAFF))),
+            const SizedBox(height: 4),
+            const Icon(Icons.download_rounded, size: 14, color: Color(0xFF98A9C1)),
+          ]),
+        ]),
       ),
     ),
   );
@@ -1616,51 +1953,113 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   ]));
 
   Widget _buildSettingsPage() => _pageFrame(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    _sectionHeading('Workspace settings', 'Configure the local processing service and runtime preferences.'),
-    const SizedBox(height: 17),
-    _panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [
-        Container(width: 38, height: 38, decoration: BoxDecoration(color: const Color(0xFF25264D), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.dns_rounded, color: Color(0xFFB9B0FF))),
-        const SizedBox(width: 11),
-        const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('AI backend connection', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)), Text('Local FastAPI service • Whisper • FFmpeg', style: TextStyle(fontSize: 10, color: Color(0xFF8796AD)))])),
-        _buildConnectionBadge(),
+    _eyebrow('SYSTEM CONFIGURATION'),
+    const SizedBox(height: 8),
+    _sectionHeading('Workspace settings', 'Manage the connection and runtime environment used by Creator Studio.'),
+    const SizedBox(height: 18),
+    _panel(
+      padding: const EdgeInsets.all(19),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        LayoutBuilder(builder: (context, constraints) {
+          final compact = constraints.maxWidth < 570;
+          final identity = Row(children: [
+            Container(
+              width: 43,
+              height: 43,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF9388F8), Color(0xFF5351A8)]),
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: const Icon(Icons.dns_rounded, color: Colors.white, size: 22),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('AI processing service', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900)),
+              SizedBox(height: 4),
+              Text('FastAPI  •  Whisper  •  FFmpeg', style: TextStyle(fontSize: 9, color: Color(0xFF8FA0B8))),
+            ])),
+          ]);
+          if (compact) return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [identity, const SizedBox(height: 12), _buildConnectionBadge()]);
+          return Row(children: [Expanded(child: identity), _buildConnectionBadge()]);
+        }),
+        const SizedBox(height: 19),
+        Container(height: 1, color: const Color(0xFF2D3D55)),
+        const SizedBox(height: 17),
+        _fieldGroupLabel('BACKEND ENDPOINT', 'Enter the address where your local AI service is listening.'),
+        TextField(
+          controller: _serverController,
+          enabled: !_busy,
+          keyboardType: TextInputType.url,
+          decoration: const InputDecoration(
+            labelText: 'Backend URL',
+            hintText: 'http://127.0.0.1:8000',
+            prefixIcon: Icon(Icons.link_rounded),
+            helperText: 'Windows: 127.0.0.1  •  Physical Android: use your PC LAN IP',
+          ),
+        ),
+        const SizedBox(height: 13),
+        LayoutBuilder(builder: (context, constraints) {
+          final compact = constraints.maxWidth < 500;
+          final status = Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(_serverOkay ? Icons.check_circle_rounded : Icons.info_outline_rounded, size: 16, color: _serverOkay ? const Color(0xFF70DDB2) : const Color(0xFFFFCC83)),
+            const SizedBox(width: 8),
+            Expanded(child: Text(_serverStatusText, style: TextStyle(fontSize: 10, color: _serverOkay ? const Color(0xFF70DDB2) : const Color(0xFFFFCC83), height: 1.45))),
+          ]);
+          final button = FilledButton.icon(
+            onPressed: _busy ? null : _checkServer,
+            icon: const Icon(Icons.wifi_tethering_rounded, size: 16),
+            label: const Text('Test connection'),
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF766BE7), padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12), textStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+          );
+          if (compact) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [status, const SizedBox(height: 11), button]);
+          return Row(children: [Expanded(child: status), const SizedBox(width: 12), button]);
+        }),
+        if (Platform.isAndroid) ...[
+          const SizedBox(height: 13),
+          Container(
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(color: const Color(0xFF3A3020), borderRadius: BorderRadius.circular(11), border: Border.all(color: const Color(0xFF6A5732))),
+            child: const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Icon(Icons.wifi_rounded, color: Color(0xFFFFCC83), size: 16),
+              SizedBox(width: 8),
+              Expanded(child: Text('For a physical Android phone, connect to the same Wi-Fi as your PC and enter the PC LAN IP. 10.0.2.2 is for Android emulators only.', style: TextStyle(fontSize: 9, color: Color(0xFFE8C995), height: 1.45))),
+            ]),
+          ),
+        ],
       ]),
-      const SizedBox(height: 18),
-      TextField(controller: _serverController, enabled: !_busy, keyboardType: TextInputType.url, decoration: const InputDecoration(labelText: 'Backend URL', hintText: 'http://127.0.0.1:8000', prefixIcon: Icon(Icons.link_rounded), helperText: 'Windows: 127.0.0.1. Android: use the PC Wi-Fi IPv4 address.')),
-      const SizedBox(height: 12),
-      Row(children: [
-        Expanded(child: Text(_serverStatusText, style: TextStyle(fontSize: 10, color: _serverOkay ? const Color(0xFF70DDB2) : const Color(0xFFFFCC83), height: 1.4))),
-        const SizedBox(width: 12),
-        FilledButton.icon(onPressed: _busy ? null : _checkServer, icon: const Icon(Icons.wifi_tethering_rounded, size: 17), label: const Text('Test connection')),
-      ]),
-      if (Platform.isAndroid) const Padding(padding: EdgeInsets.only(top: 9), child: Text('Physical Android device: connect to the same Wi-Fi as your PC, then enter the PC LAN IP. 10.0.2.2 only applies to Android emulators.', style: TextStyle(fontSize: 10, color: Color(0xFFFFCC83), height: 1.4))),
-    ])),
-    const SizedBox(height: 14),
+    ),
+    const SizedBox(height: 15),
+    _sectionHeading('Runtime overview', 'The tools and model profiles available to your workflow.'),
+    const SizedBox(height: 11),
     LayoutBuilder(builder: (context, constraints) {
-      final wide = constraints.maxWidth > 700;
+      final wide = constraints.maxWidth > 720;
       final cards = [
-        _settingsInfoCard(Icons.language_rounded, 'Language engine', '100 Whisper-supported recognition languages with Auto Detect.'),
-        _settingsInfoCard(Icons.memory_rounded, 'Model profiles', 'Tiny for speed, Base for balanced results, Small for higher accuracy.'),
-        _settingsInfoCard(Icons.security_rounded, 'Local processing', 'Your selected video is sent only to the backend URL configured above.'),
+        _settingsInfoCard(Icons.translate_rounded, 'Language recognition', 'Searchable multilingual Whisper recognition with automatic language detection.', const Color(0xFF78D9CB)),
+        _settingsInfoCard(Icons.memory_rounded, 'Model profiles', 'Tiny for speed, Base for balance and Small for higher recognition accuracy.', const Color(0xFFB3A5FF)),
+        _settingsInfoCard(Icons.shield_outlined, 'Processing privacy', 'Videos are sent to the backend URL configured above for local processing.', const Color(0xFFF0BE7E)),
       ];
       if (wide) return Row(crossAxisAlignment: CrossAxisAlignment.start, children: cards.map((card) => Expanded(child: Padding(padding: const EdgeInsets.only(right: 10), child: card))).toList());
       return Column(children: cards.map((card) => Padding(padding: const EdgeInsets.only(bottom: 10), child: card)).toList());
     }),
-    const SizedBox(height: 10),
-    _panel(padding: const EdgeInsets.all(15), child: Row(children: [
-      const Icon(Icons.info_outline_rounded, color: Color(0xFF8D9BB2), size: 19),
-      const SizedBox(width: 10),
-      const Expanded(child: Text('Creator Studio connects to a local AI backend. Keep the backend available while creating and exporting a project.', style: TextStyle(color: Color(0xFF8D9BB2), fontSize: 10, height: 1.5))),
-      TextButton(onPressed: () => setState(() => _activePage = 0), child: const Text('Overview')),
-    ])),
+    const SizedBox(height: 5),
+    _panel(
+      padding: const EdgeInsets.all(14),
+      child: Row(children: [
+        const Icon(Icons.info_outline_rounded, color: Color(0xFF8D9BB2), size: 18),
+        const SizedBox(width: 10),
+        const Expanded(child: Text('This workspace connects to a local AI backend. Keep the service available while generating or exporting a project.', style: TextStyle(color: Color(0xFF8D9BB2), fontSize: 9, height: 1.5))),
+        TextButton(onPressed: () => setState(() => _activePage = 0), child: const Text('Overview')),
+      ]),
+    ),
   ]));
 
-  Widget _settingsInfoCard(IconData icon, String title, String detail) => _panel(
+
+  Widget _settingsInfoCard(IconData icon, String title, String detail, Color accent) => _panel(
     padding: const EdgeInsets.all(15),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Icon(icon, color: const Color(0xFFAFA6FF), size: 21),
-      const SizedBox(height: 10),
-      Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11)),
+      Container(width: 36, height: 36, decoration: BoxDecoration(color: accent.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(11)), child: Icon(icon, color: accent, size: 19)),
+      const SizedBox(height: 11),
+      Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 10)),
       const SizedBox(height: 5),
       Text(detail, style: const TextStyle(color: Color(0xFF8796AD), fontSize: 9, height: 1.5)),
     ]),
