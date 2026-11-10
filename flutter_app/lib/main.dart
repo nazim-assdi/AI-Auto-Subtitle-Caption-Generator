@@ -1510,7 +1510,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       DropdownMenuItem(value: 'tiny', child: Text('Tiny  •  Fastest')),
       DropdownMenuItem(value: 'base', child: Text('Base  •  Recommended')),
       DropdownMenuItem(value: 'small', child: Text('Small  •  Higher accuracy')),
-    ], onChanged: _busy ? null : (value) => setState(() => _model = value ?? 'base')),
+    ], onChanged: (value) { if (!_busy) setState(() => _model = value ?? 'base'); }),
     const SizedBox(height: 17),
     _fieldGroupLabel('CAPTION APPEARANCE', 'Choose the visual treatment for your finished video.'),
     LayoutBuilder(builder: (context, constraints) {
@@ -1538,7 +1538,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       Expanded(child: _dropdown<int>(
         label: 'Words per line', value: _wordsPerLine,
         values: List.generate(7, (i) => DropdownMenuItem(value: i + 2, child: Text('${i + 2} words'))),
-        onChanged: _busy ? null : (value) => setState(() => _wordsPerLine = value ?? 4),
+        onChanged: (value) { if (!_busy) setState(() => _wordsPerLine = value ?? 4); },
       )),
       const SizedBox(width: 10),
       Expanded(child: _dropdown<String>(
@@ -1548,7 +1548,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
           DropdownMenuItem(value: 'top', child: Text('Top safe zone')),
           DropdownMenuItem(value: 'middle', child: Text('Middle')),
         ],
-        onChanged: _busy ? null : (value) => setState(() => _position = value ?? 'bottom'),
+        onChanged: (value) { if (!_busy) setState(() => _position = value ?? 'bottom'); },
       )),
     ]),
     const SizedBox(height: 17),
@@ -1719,8 +1719,8 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
         const SizedBox(height: 16),
         const Text('Your asset library is ready', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, letterSpacing: -0.35)),
         const SizedBox(height: 6),
-        const ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: 430),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 430),
           child: Text('Create your first captioned video. Your MP4, subtitles, documents and creator insights will be organised here automatically.', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: Color(0xFF9AAAC0), height: 1.55)),
         ),
         const SizedBox(height: 18),
