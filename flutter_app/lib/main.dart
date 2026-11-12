@@ -316,6 +316,9 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       _transcriptPreview = null;
       _detectedLanguage = null;
       _insights = null;
+      _trimmedVideoReady = false;
+      _previewKind = 'video';
+      _videoDurationSeconds = 0;
     });
     await _disposePreview();
 
