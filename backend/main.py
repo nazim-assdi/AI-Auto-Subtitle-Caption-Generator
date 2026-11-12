@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
@@ -97,6 +98,25 @@ class TranscriptUpdate(BaseModel):
 
 class TranslationRequest(BaseModel):
     target_language: str = Field(min_length=2, max_length=16)
+
+
+class TrimRequest(BaseModel):
+    start_seconds: float = Field(ge=0)
+    end_seconds: float = Field(gt=0)
+
+
+def validate_trim_range(start_seconds: float, end_seconds: float, video_duration: float) -> float:
+    values = (start_seconds, end_seconds, video_duration)
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError("Trim time finite number হতে হবে।")
+    if start_seconds < 0 or end_seconds <= start_seconds:
+        raise ValueError("End time অবশ্যই Start time-এর পরে হতে হবে।")
+    if video_duration <= 0 or start_seconds >= video_duration or end_seconds > video_duration + 0.15:
+        raise ValueError("Trim range ভিডিওর duration-এর বাইরে চলে গেছে।")
+    duration = end_seconds - start_seconds
+    if duration < 0.25:
+        raise ValueError("কমপক্ষে 0.25 সেকেন্ডের অংশ নির্বাচন করো।")
+    return round(duration, 3)
 
 
 def update_job(job_id: str, **changes: Any) -> None:
@@ -695,6 +715,70 @@ def translate_job(job_id: str, payload: TranslationRequest) -> dict[str, Any]:
     }
 
 
+@app.post("/jobs/{job_id}/trim", status_code=201)
+def trim_video(job_id: str, payload: TrimRequest) -> dict[str, Any]:
+    job = get_job(job_id)
+    if job.get("status") != "completed":
+        raise HTTPException(status_code=409, detail="প্রথমে caption rendering সম্পন্ন করো।")
+
+    job_dir = Path(job["job_dir"])
+    source_path = job_dir / "captioned_video.mp4"
+    if not source_path.exists():
+        raise HTTPException(status_code=404, detail="Captioned video পাওয়া যায়নি।")
+
+    ffmpeg = shutil.which("ffmpeg")
+    ffprobe = shutil.which("ffprobe")
+    if not ffmpeg or not ffprobe:
+        raise HTTPException(status_code=503, detail="FFmpeg/FFprobe পাওয়া যায়নি। Backend diagnostics দেখো।")
+
+    try:
+        probe = run_command([
+            ffprobe, "-v", "error", "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1", source_path.name,
+        ], cwd=job_dir)
+        video_duration = float((probe.stdout or "").strip())
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail=f"ভিডিওর duration পড়া যায়নি: {exc}") from exc
+
+    try:
+        trim_duration = validate_trim_range(payload.start_seconds, payload.end_seconds, video_duration)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    temporary_output = job_dir / "trimmed_video.next.mp4"
+    trimmed_output = job_dir / "trimmed_video.mp4"
+    try:
+        run_command([
+            ffmpeg, "-y", "-ss", f"{payload.start_seconds:.3f}", "-i", source_path.name,
+            "-t", f"{trim_duration:.3f}", "-map", "0:v:0", "-map", "0:a:0?",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
+            "-movflags", "+faststart", temporary_output.name,
+        ], cwd=job_dir)
+        if not temporary_output.exists() or temporary_output.stat().st_size == 0:
+            raise RuntimeError("FFmpeg trimmed MP4 তৈরি করতে পারেনি।")
+        temporary_output.replace(trimmed_output)
+    except RuntimeError as exc:
+        temporary_output.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"ভিডিও trim করা যায়নি: {exc}") from exc
+
+    update_job(
+        job_id,
+        trim_start_seconds=round(payload.start_seconds, 3),
+        trim_end_seconds=round(payload.end_seconds, 3),
+        trimmed_output_size=trimmed_output.stat().st_size,
+    )
+    return {
+        "job_id": job_id,
+        "status": "completed",
+        "kind": "trimmed-video",
+        "start_seconds": round(payload.start_seconds, 3),
+        "end_seconds": round(payload.end_seconds, 3),
+        "duration_seconds": trim_duration,
+        "output_size": trimmed_output.stat().st_size,
+    }
+
+
 def output_file(job_id: str, kind: str) -> tuple[Path, str, str]:
     job = get_job(job_id)
     if job.get("status") != "completed":
@@ -702,6 +786,7 @@ def output_file(job_id: str, kind: str) -> tuple[Path, str, str]:
     job_dir = Path(job["job_dir"])
     choices = {
         "video": ("captioned_video.mp4", "video/mp4", "captioned_video.mp4"),
+        "trimmed-video": ("trimmed_video.mp4", "video/mp4", "trimmed_video.mp4"),
         "srt": ("captions.srt", "application/x-subrip", "captions.srt"),
         "vtt": ("captions.vtt", "text/vtt", "captions.vtt"),
         "ass": ("captions.ass", "text/plain", "captions.ass"),
@@ -724,7 +809,7 @@ def output_file(job_id: str, kind: str) -> tuple[Path, str, str]:
         "translation-json": ("translation.json", "application/json", "translation.json"),
     }
     if kind not in choices:
-        raise HTTPException(status_code=400, detail="kind: video, srt, vtt, ass, ssa, sbv, txt, timecoded-txt, csv, tsv, xlsx, docx, md, html, json, insights, all-exports, translated-srt, translated-vtt, bilingual-srt বা translation-json হতে পারে।")
+        raise HTTPException(status_code=400, detail="kind: video, trimmed-video, srt, vtt, ass, ssa, sbv, txt, timecoded-txt, csv, tsv, xlsx, docx, md, html, json, insights, all-exports, translated-srt, translated-vtt, bilingual-srt বা translation-json হতে পারে।")
     filename, media_type, download_name = choices[kind]
     path = job_dir / filename
     if not path.exists():
@@ -733,8 +818,8 @@ def output_file(job_id: str, kind: str) -> tuple[Path, str, str]:
 
 
 @app.get("/jobs/{job_id}/stream")
-def stream_video(job_id: str) -> FileResponse:
-    path, media_type, filename = output_file(job_id, "video")
+def stream_video(job_id: str, kind: str = "video") -> FileResponse:
+    path, media_type, filename = output_file(job_id, kind)
     return FileResponse(path, media_type=media_type, filename=filename)
 
 
