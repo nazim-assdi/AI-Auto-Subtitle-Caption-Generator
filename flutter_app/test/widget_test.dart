@@ -38,6 +38,11 @@ void main() {
     expect(find.text('CAPTION APPEARANCE'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
+    await tester.tap(find.text('Edit').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Create a captioned video first'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
     await tester.tap(find.text('Exports').last);
     await tester.pumpAndSettle();
     expect(find.text('Your asset library is ready'), findsOneWidget);
