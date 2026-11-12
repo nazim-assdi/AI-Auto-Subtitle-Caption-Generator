@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -178,6 +179,13 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   String? _transcriptPreview;
   Player? _player;
   VideoController? _videoController;
+  StreamSubscription<Duration>? _durationSubscription;
+  double _videoDurationSeconds = 0;
+  double _trimStartSeconds = 0;
+  double _trimEndSeconds = 0;
+  bool _trimBusy = false;
+  bool _trimmedVideoReady = false;
+  String _previewKind = 'video';
   int _activePage = 0;
 
   String get _baseUrl => _serverController.text.trim().replaceFirst(RegExp(r'/+$'), '');
@@ -195,6 +203,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   void dispose() {
     _serverController.dispose();
     _hotwordsController.dispose();
+    unawaited(_durationSubscription?.cancel() ?? Future<void>.value());
     _player?.dispose();
     super.dispose();
   }
@@ -273,11 +282,18 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   }
 
   Future<void> _disposePreview() async {
+    await _durationSubscription?.cancel();
+    _durationSubscription = null;
     final old = _player;
     _player = null;
     _videoController = null;
     if (old != null) await old.dispose();
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {
+        _videoDurationSeconds = 0;
+        _previewKind = 'video';
+      });
+    }
   }
 
   Future<void> _createCaptions() async {
@@ -426,11 +442,18 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     }
   }
 
-  Future<void> _loadPreview(String id) async {
+  Future<void> _loadPreview(String id, {String kind = 'video'}) async {
+    await _durationSubscription?.cancel();
+    _durationSubscription = null;
+    final old = _player;
+    _player = null;
+    _videoController = null;
+    if (old != null) await old.dispose();
+
     final player = Player();
     final controller = VideoController(player);
     try {
-      await player.open(Media(_uri('/jobs/$id/stream').toString()), play: false);
+      await player.open(Media(_uri('/jobs/$id/stream?kind=$kind').toString()), play: false);
       if (!mounted) {
         await player.dispose();
         return;
@@ -438,10 +461,83 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       setState(() {
         _player = player;
         _videoController = controller;
+        _previewKind = kind;
+        _trimmedVideoReady = kind == 'trimmed-video';
+        _videoDurationSeconds = 0;
+      });
+      _durationSubscription = player.stream.duration.listen((duration) {
+        final seconds = duration.inMilliseconds / 1000.0;
+        if (!mounted || !identical(_player, player) || seconds <= 0) return;
+        setState(() {
+          _videoDurationSeconds = seconds;
+          if (_previewKind == 'video') {
+            _trimStartSeconds = 0;
+            _trimEndSeconds = seconds;
+          }
+        });
       });
     } catch (_) {
       await player.dispose();
       rethrow;
+    }
+  }
+
+  Future<void> _trimVideo() async {
+    final id = _jobId;
+    if (id == null || _trimBusy || _videoDurationSeconds <= 0) return;
+    if (_trimEndSeconds - _trimStartSeconds < 0.25) {
+      _showError('কমপক্ষে 0.25 সেকেন্ডের অংশ নির্বাচন করো।');
+      return;
+    }
+    setState(() {
+      _trimBusy = true;
+      _stage = 'নির্বাচিত অংশ FFmpeg দিয়ে render হচ্ছে...';
+      _error = null;
+    });
+    try {
+      final response = await http.post(
+        _uri('/jobs/$id/trim'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'start_seconds': _trimStartSeconds,
+          'end_seconds': _trimEndSeconds,
+        }),
+      ).timeout(const Duration(hours: 3));
+      final data = _decodeJson(response.body);
+      if (response.statusCode != 201) {
+        throw Exception(_detailFrom(data, 'ভিডিও trim করা যায়নি (${response.statusCode})'));
+      }
+      if (!mounted) return;
+      setState(() {
+        _trimmedVideoReady = true;
+        _stage = 'Trimmed MP4 তৈরি হয়েছে।';
+      });
+      try {
+        await _loadPreview(id, kind: 'trimmed-video');
+      } catch (_) {
+        if (mounted) {
+          setState(() => _stage = 'Trimmed MP4 তৈরি হয়েছে; preview খোলা যায়নি। Download করা যাবে।');
+        }
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Trimmed MP4 তৈরি হয়েছে। এখন Download করতে পারো।')),
+        );
+      }
+    } catch (e) {
+      _showError('Trim ব্যর্থ হয়েছে: ${_friendlyError(e)}');
+    } finally {
+      if (mounted) setState(() => _trimBusy = false);
+    }
+  }
+
+  Future<void> _restoreOriginalPreview() async {
+    final id = _jobId;
+    if (id == null) return;
+    try {
+      await _loadPreview(id, kind: 'video');
+    } catch (e) {
+      _showError('Original preview খোলা যায়নি: ${_friendlyError(e)}');
     }
   }
 
@@ -465,7 +561,8 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     File? tempFile;
     try {
       setState(() => _stage = 'ভিডিও সেভ করা হচ্ছে...');
-      tempFile = await _downloadToTemp(_uri('/jobs/$id/download?kind=video').toString(), 'mp4');
+      final kind = _trimmedVideoReady ? 'trimmed-video' : 'video';
+      tempFile = await _downloadToTemp(_uri('/jobs/$id/download?kind=$kind').toString(), 'mp4');
       final name = 'AI_Captioned_${DateTime.now().millisecondsSinceEpoch}';
       if (Platform.isAndroid) {
         await FileSaver.instance.saveToGallery(
@@ -770,6 +867,16 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  String _formatDuration(double seconds) {
+    final total = (seconds.isFinite ? seconds : 0).round().clamp(0, 359999).toInt();
+    final hours = total ~/ 3600;
+    final minutes = (total % 3600) ~/ 60;
+    final remaining = total % 60;
+    final mm = minutes.toString().padLeft(2, '0');
+    final ss = remaining.toString().padLeft(2, '0');
+    return hours > 0 ? '${hours.toString().padLeft(2, '0')}:$mm:$ss' : '$mm:$ss';
+  }
+
   String _formatSize(int bytes) {
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
@@ -816,8 +923,9 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       const Padding(padding: EdgeInsets.only(left: 12, bottom: 10), child: Text('WORKSPACE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF71809A), letterSpacing: 1.5))),
       _buildSideNavItem(0, Icons.grid_view_rounded, 'Overview', 'Dashboard'),
       _buildSideNavItem(1, Icons.add_box_rounded, 'New project', 'Create captions'),
-      _buildSideNavItem(2, Icons.file_download_rounded, 'Export center', 'Download files'),
-      _buildSideNavItem(3, Icons.tune_rounded, 'Settings', 'Backend & defaults'),
+      _buildSideNavItem(2, Icons.content_cut_rounded, 'Video editor', 'Preview & trim'),
+      _buildSideNavItem(3, Icons.file_download_rounded, 'Export center', 'Download files'),
+      _buildSideNavItem(4, Icons.tune_rounded, 'Settings', 'Backend & defaults'),
       const Spacer(),
       Container(
         padding: const EdgeInsets.all(14),
@@ -912,16 +1020,18 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       destinations: const [
         NavigationDestination(icon: Icon(Icons.grid_view_rounded), label: 'Home'),
         NavigationDestination(icon: Icon(Icons.add_box_rounded), label: 'Create'),
+        NavigationDestination(icon: Icon(Icons.content_cut_rounded), label: 'Edit'),
         NavigationDestination(icon: Icon(Icons.file_download_rounded), label: 'Exports'),
         NavigationDestination(icon: Icon(Icons.tune_rounded), label: 'Settings'),
       ],
     ),
   );
 
-  String get _currentPageTitle => const ['Overview', 'New project', 'Export center', 'Settings'][_activePage];
+  String get _currentPageTitle => const ['Overview', 'New project', 'Video editor', 'Export center', 'Settings'][_activePage];
   String get _currentPageSubtitle => const [
     'Your AI video workspace at a glance.',
     'Turn a video into polished, word-level captions.',
+    'Preview your result and trim a precise section.',
     'Download your video, subtitles and creator reports.',
     'Manage your local AI connection and defaults.',
   ][_activePage];
@@ -958,7 +1068,8 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   Widget _activeWorkspacePage({required bool desktop}) => switch (_activePage) {
     0 => _buildDashboardPage(),
     1 => _buildCreatePage(),
-    2 => _buildExportPage(),
+    2 => _buildVideoEditorPage(),
+    3 => _buildExportPage(),
     _ => _buildSettingsPage(),
   };
 
@@ -1370,7 +1481,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       const Icon(Icons.shield_outlined, size: 17, color: Color(0xFF70D7C3)),
       const SizedBox(width: 9),
       const Expanded(child: Text('Your footage is processed by the AI backend you configure. No account sign-in is required.', style: TextStyle(fontSize: 10, color: Color(0xFF9AAAC0), height: 1.45))),
-      if (_jobId != null && !_busy && _error == null) FilledButton.tonalIcon(onPressed: () => setState(() => _activePage = 2), icon: const Icon(Icons.arrow_forward_rounded, size: 16), label: const Text('View exports')),
+      if (_jobId != null && !_busy && _error == null) FilledButton.tonalIcon(onPressed: () => setState(() => _activePage = 3), icon: const Icon(Icons.arrow_forward_rounded, size: 16), label: const Text('View exports')),
     ])),
   ]));
 
@@ -1680,6 +1791,92 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       Align(alignment: Alignment.centerRight, child: FilledButton.tonalIcon(onPressed: () => setState(() => _activePage = 2), icon: const Icon(Icons.file_download_outlined, size: 16), label: const Text('Open export center'))),
     ],
   ]));
+
+  Widget _buildVideoEditorPage() => _pageFrame(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    _eyebrow('VIDEO EDITING WORKSPACE'),
+    const SizedBox(height: 8),
+    _sectionHeading('Video editor', 'Preview your captioned video, choose an in/out range and render a separate MP4 clip.'),
+    const SizedBox(height: 18),
+    if (_jobId == null || _error != null)
+      _panel(padding: const EdgeInsets.all(24), child: Column(children: [
+        const Icon(Icons.movie_filter_rounded, size: 42, color: Color(0xFF9C91FF)),
+        const SizedBox(height: 12),
+        const Text('Create a captioned video first', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 6),
+        const Text('Your video will appear here after the AI caption render is complete.', textAlign: TextAlign.center, style: TextStyle(fontSize: 10, color: Color(0xFF91A1B8))),
+        const SizedBox(height: 15),
+        FilledButton.icon(onPressed: () => setState(() => _activePage = 1), icon: const Icon(Icons.add_rounded), label: const Text('Open new project')),
+      ]))
+    else ...[
+      _buildPreviewPanel(),
+      const SizedBox(height: 14),
+      _buildTrimTimelinePanel(),
+    ],
+  ]));
+
+  Widget _buildTrimTimelinePanel() {
+    final duration = _videoDurationSeconds;
+    final canAdjust = duration > 0.25 && _previewKind == 'video' && !_trimBusy;
+    final rangeMax = duration > 0 ? duration : 1.0;
+    final start = _trimStartSeconds.clamp(0.0, rangeMax).toDouble();
+    final end = _trimEndSeconds.clamp(start, rangeMax).toDouble();
+    final values = RangeValues(start, end > start ? end : rangeMax);
+    final divisions = (duration > 0 ? duration.round() : 1).clamp(1, 1000).toInt();
+    return _panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Expanded(child: _sectionHeading('Timeline & trim', 'Select the section to keep. Original captions and timing stay unchanged.')),
+        _miniStatusPill(_previewKind == 'trimmed-video' ? 'TRIMMED PREVIEW' : 'SOURCE VIDEO', active: _previewKind == 'trimmed-video'),
+      ]),
+      const SizedBox(height: 15),
+      if (duration <= 0.25)
+        const Text('ভিডিওর duration আসছে... Preview load হলে Timeline controls চালু হবে।', style: TextStyle(fontSize: 10, color: Color(0xFF91A1B8)))
+      else if (_previewKind == 'trimmed-video') ...[
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: const Color(0xFF15352F), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFF347A68))),
+          child: Row(children: [
+            const Icon(Icons.check_circle_rounded, color: Color(0xFF8BE6C5), size: 18),
+            const SizedBox(width: 9),
+            const Expanded(child: Text('Trimmed preview ready. You can download this MP4 or restore the original to choose another range.', style: TextStyle(fontSize: 10, color: Color(0xFFB8E8D6), height: 1.4))),
+          ]),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(onPressed: _trimBusy ? null : _restoreOriginalPreview, icon: const Icon(Icons.restart_alt_rounded), label: const Text('Edit another section')),
+      ] else ...[
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Text('IN  ${_formatDuration(start)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFF8CE2C7))),
+          Text('OUT  ${_formatDuration(end)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFFC7BDFF))),
+        ]),
+        RangeSlider(
+          values: values,
+          min: 0,
+          max: rangeMax,
+          divisions: divisions,
+          labels: RangeLabels(_formatDuration(start), _formatDuration(end)),
+          onChanged: canAdjust
+              ? (range) => setState(() {
+                    _trimStartSeconds = range.start;
+                    _trimEndSeconds = range.end;
+                  })
+              : null,
+        ),
+        Row(children: [
+          Text('00:00  /  ${_formatDuration(duration)}', style: const TextStyle(fontSize: 9, color: Color(0xFF8392AA))),
+          const Spacer(),
+          Text('KEEP  ${_formatDuration(end - start)}', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Color(0xFFBDB5FF))),
+        ]),
+        const SizedBox(height: 13),
+        SizedBox(width: double.infinity, child: FilledButton.icon(
+          onPressed: canAdjust ? _trimVideo : null,
+          icon: _trimBusy ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.content_cut_rounded, size: 17),
+          label: Text(_trimBusy ? 'Rendering selected clip...' : 'Trim & create MP4'),
+          style: FilledButton.styleFrom(backgroundColor: const Color(0xFF766BE7), padding: const EdgeInsets.symmetric(vertical: 13), textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
+        )),
+      ],
+      const SizedBox(height: 10),
+      const Text('Trim uses the finished captioned video and creates a separate MP4. The original render and subtitle exports are kept.', style: TextStyle(fontSize: 9, color: Color(0xFF7F8EA6), height: 1.45)),
+    ]));
+  }
 
   Widget _buildExportPage() => _pageFrame(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     _eyebrow('DELIVERY & ASSET LIBRARY'),
