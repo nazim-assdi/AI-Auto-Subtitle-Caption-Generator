@@ -223,6 +223,8 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     _hotwordsController = TextEditingController();
     if (Platform.isWindows) {
       unawaited(_ensureLocalBackend());
+    } else if (Platform.isAndroid) {
+      unawaited(_checkServer());
     }
   }
 
@@ -1741,7 +1743,6 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       dropdownMenuEntries: _availableLanguages.map((item) => DropdownMenuEntry<String>(value: item['code']!, label: '${item['name']} (${item['code']})')).toList(),
       onSelected: _busy ? null : (value) => setState(() => _language = value ?? 'auto'),
     ),
-    const SizedBox(height: 16),
     const SizedBox(height: 16),
     _fieldGroupLabel('SUBTITLE OUTPUT LANGUAGE', 'Choose the language your finished subtitles and burned-in captions should use.'),
     _dropdown<String>(

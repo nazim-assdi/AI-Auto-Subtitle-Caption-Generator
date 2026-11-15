@@ -425,12 +425,12 @@ def process_job(job_id: str, source_path: Path, model_size: str, language: str, 
             raise RuntimeError(str(capabilities.get("diagnostic") or "FFmpeg/FFprobe ইনস্টল নেই।"))
         if not capabilities["ass_filter_ready"]:
             raise RuntimeError("এই FFmpeg build-এ ASS/libass subtitle renderer নেই। FFmpeg full/shared build install করে Terminal restart করো। Diagnostics: " + str(capabilities.get("diagnostic")))
-        update_job(job_id, status="processing", progress=8, stage="ভিডিও থেকে অডিও প্রস্তুত করা হচ্ছে")
+        update_job(job_id, status="processing", progress=8, stage="Preparing audio from video")
         run_command([
             shutil.which("ffmpeg") or "ffmpeg", "-y", "-i", source_path.name, "-vn",
             "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", audio_path.name,
         ], cwd=job_dir)
-        update_job(job_id, progress=20, stage="AI দিয়ে কথা শনাক্ত করা হচ্ছে (Whisper)")
+        update_job(job_id, progress=20, stage="Transcribing speech with Whisper")
         with model_lock:
             model = get_model(model_size)
             transcribe_args: dict[str, Any] = {
@@ -449,7 +449,7 @@ def process_job(job_id: str, source_path: Path, model_size: str, language: str, 
                 raw_segments.append(segment)
                 if duration > 0:
                     fraction = min(1.0, float(getattr(segment, "end", 0.0)) / duration)
-                    update_job(job_id, progress=20 + int(fraction * 36), stage="AI দিয়ে কথা শনাক্ত করা হচ্ছে (Whisper)")
+                    update_job(job_id, progress=20 + int(fraction * 36), stage="Transcribing speech with Whisper")
         if not raw_segments:
             raise RuntimeError("ভিডিওতে শনাক্ত করার মতো কোনো কথা পাওয়া যায়নি। অন্য ভিডিও দিয়ে চেষ্টা করো।")
         source_segments = serialize_segments(raw_segments)
@@ -485,9 +485,9 @@ def process_job(job_id: str, source_path: Path, model_size: str, language: str, 
             },
         )
         output_size = render_video(job_id, source_path, job_dir, style)
-        update_job(job_id, status="completed", progress=100, stage="সম্পন্ন — transcript edit ও export করা যাবে", output_size=output_size)
+        update_job(job_id, status="completed", progress=100, stage="Subtitle rendering complete — your video and exports are ready", output_size=output_size)
     except Exception as exc:
-        update_job(job_id, status="failed", progress=0, stage="সমস্যা হয়েছে", error=str(exc)[-5000:])
+        update_job(job_id, status="failed", progress=0, stage="Processing failed", error=str(exc)[-5000:])
         for filename in ("captioned_video.mp4", "captioned_video.next.mp4", "captions.srt", "captions.vtt", "captions.ass"):
             try:
                 (job_dir / filename).unlink(missing_ok=True)
@@ -651,14 +651,14 @@ async def create_job(
     with jobs_lock:
         jobs[job_id] = {
             "job_id": job_id, "status": "queued", "progress": 2,
-            "stage": "কাজের সারিতে যোগ হয়েছে", "error": None,
+            "stage": "Added to the processing queue", "error": None,
             "created_file": file.filename, "detected_language": None, "output_size": 0,
             "job_dir": str(job_dir), "source_path": str(source_path),
             "style": style, "words_per_line": words_per_line, "position": position,
             "target_language": target_language, "subtitle_language": None, "font_family": font_family,
         }
     background_tasks.add_task(process_job, job_id, source_path, model_size, language, style, hotwords, words_per_line, position, target_language, font_family)
-    return {"job_id": job_id, "status": "queued", "message": "AI transcript generation শুরু হয়েছে।"}
+    return {"job_id": job_id, "status": "queued", "message": "AI subtitle generation has started."}
 
 
 @app.get("/jobs/{job_id}")
@@ -705,12 +705,16 @@ def update_transcript(job_id: str, payload: TranscriptUpdate, background_tasks: 
         raise HTTPException(status_code=400, detail="অজানা caption theme।")
     words_per_line = payload.words_per_line or int(job.get("words_per_line", 4))
     position = payload.position or job.get("position", "bottom")
+    try:
+        font_family = validate_caption_font(payload.font_family or job.get("font_family", "Segoe UI"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not 2 <= words_per_line <= 8 or position not in {"bottom", "top", "middle"}:
-        raise HTTPException(status_code=400, detail="Caption layout settings সঠিক নয়।")
+        raise HTTPException(status_code=400, detail="Caption layout settings are invalid.")
     data_path.write_text(json.dumps(segment_data, ensure_ascii=False, indent=2), encoding="utf-8")
-    update_job(job_id, status="rendering", progress=76, stage="Edited transcript save হয়েছে; re-render শুরু")
-    background_tasks.add_task(rerender_job, job_id, style, words_per_line, position)
-    return {"job_id": job_id, "status": "rendering", "message": "Edited captions render হচ্ছে।"}
+    update_job(job_id, status="rendering", progress=76, stage="Saving transcript edits and rendering updated captions")
+    background_tasks.add_task(rerender_job, job_id, style, words_per_line, position, font_family)
+    return {"job_id": job_id, "status": "rendering", "message": "Edited captions are rendering."}
 
 
 @app.get("/jobs/{job_id}/insights")

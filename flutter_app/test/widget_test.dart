@@ -35,6 +35,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('New video project'), findsOneWidget);
     expect(find.text('Add your source video'), findsOneWidget);
+    expect(find.text('SUBTITLE OUTPUT LANGUAGE'), findsOneWidget);
+    expect(find.text('Subtitle language'), findsOneWidget);
+    expect(find.text('Same as spoken language'), findsOneWidget);
+    expect(find.text('CAPTION FONT DESIGN'), findsOneWidget);
+    expect(find.text('Caption font family'), findsOneWidget);
     expect(find.text('CAPTION APPEARANCE'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
