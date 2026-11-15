@@ -187,6 +187,8 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   bool _trimmedVideoReady = false;
   String _previewKind = 'video';
   int _activePage = 0;
+  Process? _localBackendProcess;
+  bool _backendStarting = false;
 
   String get _baseUrl => _serverController.text.trim().replaceFirst(RegExp(r'/+$'), '');
 
@@ -197,6 +199,77 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       text: Platform.isAndroid ? 'http://10.0.2.2:8000' : 'http://127.0.0.1:8000',
     );
     _hotwordsController = TextEditingController();
+    if (Platform.isWindows) {
+      unawaited(_ensureLocalBackend());
+    }
+  }
+
+  Future<bool> _healthReady() async {
+    try {
+      final response = await http.get(_uri('/health')).timeout(const Duration(seconds: 2));
+      if (response.statusCode != 200) return false;
+      final data = _decodeJson(response.body);
+      return data['ok'] == true && data['ffmpeg_ready'] == true && data['ass_filter_ready'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _ensureLocalBackend() async {
+    if (!Platform.isWindows || _backendStarting) return;
+    _backendStarting = true;
+    try {
+      if (await _healthReady()) {
+        await _checkServer();
+        return;
+      }
+      final appDirectory = File(Platform.resolvedExecutable).parent;
+      final separator = Platform.pathSeparator;
+      final backendExe = '${appDirectory.path}${separator}backend_runtime${separator}ai_subtitle_backend.exe';
+      if (!await File(backendExe).exists()) {
+        if (mounted) setState(() {
+          _serverOkay = false;
+          _serverStatusText = 'এই build-এ bundled backend পাওয়া যায়নি। Official full Windows installer/ZIP ব্যবহার করো।';
+          _stage = 'Backend runtime পাওয়া যায়নি';
+        });
+        return;
+      }
+      if (mounted) setState(() {
+        _stage = 'প্রথমবারের মতো local AI Backend চালু হচ্ছে...';
+        _serverStatusText = 'Bundled Backend starting • কিছুক্ষণ অপেক্ষা করো';
+      });
+      final runtimeDirectory = '${appDirectory.path}${separator}backend_runtime';
+      final process = await Process.start(
+        backendExe,
+        const [],
+        workingDirectory: runtimeDirectory,
+        mode: ProcessStartMode.normal,
+      );
+      _localBackendProcess = process;
+      process.stdout.transform(utf8.decoder).listen((_) {});
+      process.stderr.transform(utf8.decoder).listen((_) {});
+      for (var attempt = 0; attempt < 90; attempt++) {
+        if (!mounted) return;
+        if (await _healthReady()) {
+          await _checkServer();
+          if (mounted) setState(() => _stage = 'Local Backend স্বয়ংক্রিয়ভাবে প্রস্তুত।');
+          return;
+        }
+        await Future<void>.delayed(const Duration(seconds: 1));
+      }
+      if (mounted) setState(() {
+        _serverOkay = false;
+        _serverStatusText = 'Bundled Backend চালু হতে সময় বেশি লাগছে। App বন্ধ করে আবার চালু করো।';
+        _stage = 'Backend startup timeout';
+      });
+    } catch (e) {
+      if (mounted) setState(() {
+        _serverOkay = false;
+        _serverStatusText = 'Local Backend চালু করা যায়নি: ${_friendlyError(e)}';
+      });
+    } finally {
+      _backendStarting = false;
+    }
   }
 
   @override
@@ -205,6 +278,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     _hotwordsController.dispose();
     unawaited(_durationSubscription?.cancel() ?? Future<void>.value());
     _player?.dispose();
+    _localBackendProcess?.kill(ProcessSignal.sigterm);
     super.dispose();
   }
 

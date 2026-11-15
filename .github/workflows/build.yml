@@ -99,14 +99,39 @@ jobs:
       - name: Build Windows release
         working-directory: flutter_app
         run: flutter build windows --release
-      - name: Package portable folder
+      - name: Install Python backend build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt pyinstaller
+      - name: Install bundled FFmpeg runtime
+        run: choco install ffmpeg-shared -y --no-progress
+      - name: Package self-contained backend
         shell: pwsh
         run: |
-          $release = 'flutter_app/build/windows/x64/runner/Release'
-          $target = 'flutter_app/dist/Windows_Portable'
-          New-Item -ItemType Directory -Force -Path $target | Out-Null
-          Copy-Item -Path "$release/*" -Destination $target -Recurse -Force
-          Compress-Archive -Path "$target/*" -DestinationPath 'flutter_app/dist/AI_Auto_Subtitle_Generator_Windows_Portable.zip' -Force
+          $runtime = 'flutter_app/dist/Windows_Portable/backend_runtime'
+          New-Item -ItemType Directory -Force -Path $runtime | Out-Null
+          python -m PyInstaller --noconfirm --clean --onedir --name ai_subtitle_backend --distpath $runtime --workpath "$env:RUNNER_TEMP/pyinstaller-work" --specpath "$env:RUNNER_TEMP/pyinstaller-spec" --collect-all faster_whisper --collect-all ctranslate2 --collect-all av --collect-all tokenizers --collect-all huggingface_hub --collect-all yaml --hidden-import uvicorn.logging --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.lifespan.on "$PWD/backend/desktop_server.py"
+          if ($LASTEXITCODE -ne 0) { throw 'PyInstaller backend packaging failed' }
+          $ffmpeg = (Get-Command ffmpeg.exe -ErrorAction Stop).Source
+          $ffmpegDir = Split-Path $ffmpeg -Parent
+          $ffmpegTarget = Join-Path $runtime 'ffmpeg'
+          New-Item -ItemType Directory -Force -Path $ffmpegTarget | Out-Null
+          Copy-Item $ffmpeg (Join-Path $ffmpegTarget 'ffmpeg.exe') -Force
+          $ffprobe = Join-Path $ffmpegDir 'ffprobe.exe'
+          if (-not (Test-Path $ffprobe)) { throw 'ffprobe.exe missing from FFmpeg distribution' }
+          Copy-Item $ffprobe (Join-Path $ffmpegTarget 'ffprobe.exe') -Force
+          Get-ChildItem $ffmpegDir -Filter '*.dll' | Copy-Item -Destination $ffmpegTarget -Force
+          $built = Join-Path $runtime 'ai_subtitle_backend'
+          if (-not (Test-Path (Join-Path $built 'ai_subtitle_backend.exe'))) { throw 'Backend executable missing' }
+          Copy-Item (Join-Path $built '*') -Destination $runtime -Recurse -Force
+          Remove-Item $built -Recurse -Force
+          Copy-Item -Path 'flutter_app/build/windows/x64/runner/Release/*' -Destination 'flutter_app/dist/Windows_Portable' -Recurse -Force
+          @'
+          AI Auto Subtitle Generator - Windows self-contained build
+          Start ai_auto_subtitle_generator.exe. The app launches its bundled local backend automatically.
+          First launch requires internet access to download the selected Whisper model. Keep backend_runtime beside the app executable.
+          '@ | Set-Content 'flutter_app/dist/Windows_Portable/README_BACKEND.txt' -Encoding UTF8
+          Compress-Archive -Path 'flutter_app/dist/Windows_Portable/*' -DestinationPath 'flutter_app/dist/AI_Auto_Subtitle_Generator_Windows_Portable.zip' -Force
       - uses: actions/upload-artifact@v4
         with:
           name: ai-auto-subtitle-generator-windows-portable

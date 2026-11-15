@@ -31,7 +31,7 @@ from subtitle_utils import STYLE_COLORS, collect_word_items, make_ass, make_srt,
 from export_utils import make_all_exports
 
 BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
+DATA_DIR = Path(os.getenv("AI_SUBTITLE_DATA_DIR", str(BASE_DIR / "data"))).expanduser().resolve()
 JOBS_DIR = DATA_DIR / "jobs"
 MODEL_DIR = DATA_DIR / "models"
 for folder in (DATA_DIR, JOBS_DIR, MODEL_DIR):
