@@ -1304,9 +1304,9 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     crossAxisAlignment: CrossAxisAlignment.center,
     children: [
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: -0.35, color: Color(0xFFF0F3FA))),
+        _AnimatedTextReveal(child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: -0.35, color: Color(0xFFF0F3FA)))),
         const SizedBox(height: 5),
-        Text(subtitle, style: const TextStyle(fontSize: 10, color: Color(0xFF92A1B8), height: 1.45)),
+        _AnimatedTextReveal(child: Text(subtitle, style: const TextStyle(fontSize: 10, color: Color(0xFF92A1B8, height: 1.45))),
       ])),
       ?trailing,
     ],
@@ -1587,7 +1587,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   Widget _buildCreatePage() => _pageFrame(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     _eyebrow('CREATION WORKFLOW'),
     const SizedBox(height: 8),
-    _sectionHeading('New video project', 'Build a publish-ready captioned video in three guided steps.'),
+    _AnimatedTextReveal(child: _sectionHeading('New video project', 'Build a publish-ready captioned video in three guided steps.')),
     const SizedBox(height: 18),
     _buildCreationStepper(),
     const SizedBox(height: 17),

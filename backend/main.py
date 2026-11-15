@@ -162,7 +162,7 @@ def validate_caption_font(font_family: str) -> str:
 
 def get_argos_translator(source_code: str, target_code: str):
     """Find an installed Argos route or download a direct/English-pivot route once."""
-    if argos_translate is None or argos_package is None:
+    if argos_translate is None:
         raise RuntimeError(
             "The offline translation engine is unavailable in this installation. "
             "Reinstall the app with the bundled translation runtime."
@@ -185,6 +185,8 @@ def get_argos_translator(source_code: str, target_code: str):
     if translator is not None:
         return translator
 
+    if argos_package is None:
+        raise RuntimeError("The Argos model downloader is unavailable in this installation.")
     try:
         argos_package.update_package_index()
         available = argos_package.get_available_packages()
@@ -222,24 +224,7 @@ def translate_segment_data(
     segment_data: list[dict[str, Any]], source_code: str, target_code: str
 ) -> list[dict[str, Any]]:
     """Translate complete ASR cues while retaining each cue's original timing."""
-    if argos_translate is None:
-        raise RuntimeError(
-            "Offline translation is not installed. Install the Argos translation engine "
-            "and the requested source-to-target language pair, then retry."
-        )
-    installed = {language.code: language for language in argos_translate.get_installed_languages()}
-    source = installed.get(source_code)
-    target = installed.get(target_code)
-    if source is None or target is None:
-        raise RuntimeError(
-            f"The offline translation pair {source_code} → {target_code} is not installed. "
-            "Install that pair with the translation model installer, then retry."
-        )
-    translator = source.get_translation(target)
-    if translator is None:
-        raise RuntimeError(
-            f"No offline translation path is installed for {source_code} → {target_code}."
-        )
+    translator = get_argos_translator(source_code, target_code)
     translated: list[dict[str, Any]] = []
     for item in segment_data:
         copy = dict(item)
