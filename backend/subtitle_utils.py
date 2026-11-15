@@ -111,12 +111,13 @@ def make_ass(
     target_path: Path,
     words_per_line: int = 4,
     position: str = "bottom",
+    font_family: str = "Nirmala UI",
 ) -> None:
     phrases = split_into_phrases(collect_word_items(segments), max_words=max(2, min(8, words_per_line)))
     font_size = max(28, min(64, int(height * 0.047)))
     outline = 4 if style in {"hormozi", "cinema"} else 2 if style in {"clean", "minimal"} else 3
     active_color = STYLE_COLORS.get(style, STYLE_COLORS["hormozi"])
-    font_name = "Nirmala UI" if os.name == "nt" else "Noto Sans"
+    font_name = font_family.strip() or ("Nirmala UI" if os.name == "nt" else "Noto Sans")
     margin_v = max(55, int(height * 0.075))
     alignment = {"bottom": 2, "top": 8, "middle": 5}.get(position, 2)
     lines = [
@@ -130,7 +131,7 @@ def make_ass(
         "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        f"Style: Default,{font_name},{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,{outline},2,{alignment},50,50,{margin_v},1",
+        f"Style: Default,{font_name.replace(',', '')},{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,{outline},2,{alignment},50,50,{margin_v},1",
         "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",

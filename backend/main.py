@@ -43,6 +43,7 @@ CPU_THREADS = max(1, min(os.cpu_count() or 4, int(os.getenv("CPU_THREADS", "4"))
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
 ALLOWED_LANGUAGES = {"auto", *_LANGUAGE_CODES}
 ALLOWED_MODELS = {"tiny", "base", "small"}
+CAPTION_FONT_FAMILIES = {"Segoe UI", "Arial", "Nirmala UI", "Verdana", "Georgia", "Impact", "Tahoma", "Trebuchet MS"}
 FILLER_WORDS = {
     "en": {"uh", "um", "erm", "hmm", "you know", "i mean", "basically", "actually"},
     "bn": {"মানে", "উম", "আসলে", "এইযে", "তো", "হ্যাঁ মানে"},
@@ -94,6 +95,7 @@ class TranscriptUpdate(BaseModel):
     style: str | None = None
     words_per_line: int | None = Field(default=None, ge=2, le=8)
     position: str | None = None
+    font_family: str | None = Field(default=None, max_length=48)
 
 
 class TranslationRequest(BaseModel):
@@ -148,6 +150,47 @@ def get_model(model_size: str) -> WhisperModel:
             loaded_model_size = model_size
     return loaded_model
 
+
+
+def validate_caption_font(font_family: str) -> str:
+    selected = font_family.strip()
+    if selected not in CAPTION_FONT_FAMILIES:
+        raise ValueError("Unsupported caption font family.")
+    return selected
+
+
+def translate_segment_data(
+    segment_data: list[dict[str, Any]], source_code: str, target_code: str
+) -> list[dict[str, Any]]:
+    """Translate complete ASR cues while retaining each cue's original timing."""
+    if argos_translate is None:
+        raise RuntimeError(
+            "Offline translation is not installed. Install the Argos translation engine "
+            "and the requested source-to-target language pair, then retry."
+        )
+    installed = {language.code: language for language in argos_translate.get_installed_languages()}
+    source = installed.get(source_code)
+    target = installed.get(target_code)
+    if source is None or target is None:
+        raise RuntimeError(
+            f"The offline translation pair {source_code} → {target_code} is not installed. "
+            "Install that pair with the translation model installer, then retry."
+        )
+    translator = source.get_translation(target)
+    if translator is None:
+        raise RuntimeError(
+            f"No offline translation path is installed for {source_code} → {target_code}."
+        )
+    translated: list[dict[str, Any]] = []
+    for item in segment_data:
+        copy = dict(item)
+        original_text = str(item.get("text", "") or "")
+        copy["text"] = translator.translate(original_text) if original_text.strip() else ""
+        # Source word timestamps do not map onto translated word order. The ASS
+        # writer distributes translated words across the original cue timing.
+        copy["words"] = []
+        translated.append(copy)
+    return translated
 
 def parse_ffmpeg_filters(output: str) -> set[str]:
     """Extract FFmpeg filter names from the human-readable -filters table."""
@@ -331,11 +374,11 @@ def build_insights(segment_data: list[dict[str, Any]], language: str) -> dict[st
     }
 
 
-def write_project_exports(job_dir: Path, segment_data: list[dict[str, Any]], style: str, words_per_line: int, position: str, language: str = "auto") -> dict[str, Any]:
+def write_project_exports(job_dir: Path, segment_data: list[dict[str, Any]], style: str, words_per_line: int, position: str, language: str = "auto", font_family: str = "Segoe UI") -> dict[str, Any]:
     segments = hydrate_segments(segment_data)
     width, height = probe_video(shutil.which("ffprobe") or "ffprobe", next(job_dir.glob("source.*")))
     ass_path = job_dir / "captions.ass"
-    make_ass(segments, width, height, style, ass_path, words_per_line=words_per_line, position=position)
+    make_ass(segments, width, height, style, ass_path, words_per_line=words_per_line, position=position, font_family=font_family)
     make_srt(segments, job_dir / "captions.srt")
     make_vtt(segments, job_dir / "captions.vtt")
     (job_dir / "transcript.txt").write_text(
@@ -373,7 +416,7 @@ def render_video(job_id: str, source_path: Path, job_dir: Path, style: str) -> i
     return final_output.stat().st_size
 
 
-def process_job(job_id: str, source_path: Path, model_size: str, language: str, style: str, hotwords: str, words_per_line: int, position: str) -> None:
+def process_job(job_id: str, source_path: Path, model_size: str, language: str, style: str, hotwords: str, words_per_line: int, position: str, target_language: str = "same", font_family: str = "Segoe UI") -> None:
     job_dir = source_path.parent
     audio_path = job_dir / "speech.wav"
     try:
@@ -409,16 +452,29 @@ def process_job(job_id: str, source_path: Path, model_size: str, language: str, 
                     update_job(job_id, progress=20 + int(fraction * 36), stage="AI দিয়ে কথা শনাক্ত করা হচ্ছে (Whisper)")
         if not raw_segments:
             raise RuntimeError("ভিডিওতে শনাক্ত করার মতো কোনো কথা পাওয়া যায়নি। অন্য ভিডিও দিয়ে চেষ্টা করো।")
-        segment_data = serialize_segments(raw_segments)
+        source_segments = serialize_segments(raw_segments)
+        detected_language = str(getattr(info, "language", "auto") or "auto").lower()
+        output_language = detected_language
+        segment_data = source_segments
+        if target_language != "same" and target_language != detected_language:
+            update_job(job_id, progress=58, stage=f"Translating captions: {detected_language} → {target_language}")
+            # Preserve the original transcript so bilingual/secondary translations remain possible.
+            (job_dir / "original_segments.json").write_text(
+                json.dumps(source_segments, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            segment_data = translate_segment_data(source_segments, detected_language, target_language)
+            output_language = target_language
         (job_dir / "segments.json").write_text(json.dumps(segment_data, ensure_ascii=False, indent=2), encoding="utf-8")
-        update_job(job_id, progress=60, stage="Transcript ও Creator Pulse report তৈরি হচ্ছে")
-        insights = write_project_exports(job_dir, segment_data, style, words_per_line, position, getattr(info, "language", "auto"))
+        update_job(job_id, progress=60, stage="Preparing transcript and creator report")
+        insights = write_project_exports(job_dir, segment_data, style, words_per_line, position, output_language, font_family)
         transcript = "\n".join(item["text"] for item in segment_data).strip()
         update_job(
             job_id,
             progress=70,
-            stage="ভিডিওতে animated word-by-word captions render হচ্ছে",
-            detected_language=getattr(info, "language", None),
+            stage="Rendering animated word-by-word captions",
+            detected_language=detected_language,
+            subtitle_language=output_language,
+            font_family=font_family,
             language_probability=round(float(getattr(info, "language_probability", 0.0) or 0.0), 3),
             transcript_preview=transcript[:500],
             insights_summary={
@@ -444,18 +500,19 @@ def process_job(job_id: str, source_path: Path, model_size: str, language: str, 
             pass
 
 
-def rerender_job(job_id: str, style: str, words_per_line: int, position: str) -> None:
+def rerender_job(job_id: str, style: str, words_per_line: int, position: str, font_family: str = "Segoe UI") -> None:
     job = get_job(job_id)
     job_dir = Path(job["job_dir"])
     source_path = Path(job["source_path"])
     try:
-        update_job(job_id, status="rendering", progress=76, stage="Edited transcript দিয়ে video পুনরায় render হচ্ছে")
+        update_job(job_id, status="rendering", progress=76, stage="Rendering the edited transcript")
         segment_data = json.loads((job_dir / "segments.json").read_text(encoding="utf-8"))
-        insights = write_project_exports(job_dir, segment_data, style, words_per_line, position, job.get("detected_language", "auto") or "auto")
+        output_language = job.get("subtitle_language") or job.get("detected_language", "auto") or "auto"
+        insights = write_project_exports(job_dir, segment_data, style, words_per_line, position, output_language, font_family)
         output_size = render_video(job_id, source_path, job_dir, style)
         update_job(
             job_id, status="completed", progress=100, stage="নতুন caption-সহ render সম্পন্ন",
-            style=style, words_per_line=words_per_line, position=position,
+            style=style, words_per_line=words_per_line, position=position, font_family=font_family,
             output_size=output_size,
             insights_summary={
                 "word_count": insights["word_count"],
@@ -538,6 +595,8 @@ async def create_job(
     hotwords: str = Form(""),
     words_per_line: int = Form(4),
     position: str = Form("bottom"),
+    target_language: str = Form("same"),
+    font_family: str = Form("Segoe UI"),
 ) -> dict[str, Any]:
     if not file.filename:
         raise HTTPException(status_code=400, detail="ফাইলের নাম পাওয়া যায়নি।")
@@ -554,7 +613,14 @@ async def create_job(
     if not 2 <= words_per_line <= 8:
         raise HTTPException(status_code=400, detail="এক লাইনে ২ থেকে ৮টি শব্দ বেছে নাও।")
     if position not in {"bottom", "top", "middle"}:
-        raise HTTPException(status_code=400, detail="Caption position bottom, top অথবা middle হতে পারে।")
+        raise HTTPException(status_code=400, detail="Caption position must be bottom, top or middle.")
+    target_language = target_language.strip().lower()
+    if target_language != "same" and target_language not in _LANGUAGE_CODES:
+        raise HTTPException(status_code=400, detail="The selected subtitle output language is not supported.")
+    try:
+        font_family = validate_caption_font(font_family)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if len(hotwords) > 1000:
         raise HTTPException(status_code=400, detail="Vocabulary boost সর্বোচ্চ ১০০০ অক্ষর।")
 
@@ -589,8 +655,9 @@ async def create_job(
             "created_file": file.filename, "detected_language": None, "output_size": 0,
             "job_dir": str(job_dir), "source_path": str(source_path),
             "style": style, "words_per_line": words_per_line, "position": position,
+            "target_language": target_language, "subtitle_language": None, "font_family": font_family,
         }
-    background_tasks.add_task(process_job, job_id, source_path, model_size, language, style, hotwords, words_per_line, position)
+    background_tasks.add_task(process_job, job_id, source_path, model_size, language, style, hotwords, words_per_line, position, target_language, font_family)
     return {"job_id": job_id, "status": "queued", "message": "AI transcript generation শুরু হয়েছে।"}
 
 
@@ -680,7 +747,10 @@ def translate_job(job_id: str, payload: TranslationRequest) -> dict[str, Any]:
         raise HTTPException(status_code=409, detail=f"{source_code} → {target_code} translation path install করা নেই।")
 
     job_dir = Path(job["job_dir"])
-    source_data = json.loads((job_dir / "segments.json").read_text(encoding="utf-8"))
+    source_path = job_dir / "original_segments.json"
+    if not source_path.exists():
+        source_path = job_dir / "segments.json"
+    source_data = json.loads(source_path.read_text(encoding="utf-8"))
     translated_data = []
     for item in source_data:
         translated_data.append({
