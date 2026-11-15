@@ -1,0 +1,2 @@
+# Install after requirements.txt when producing the self-contained Windows runtime.
+pyinstaller==6.19.0
