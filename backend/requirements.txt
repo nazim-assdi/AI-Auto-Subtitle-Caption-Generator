@@ -4,4 +4,4 @@ python-multipart==0.0.20
 faster-whisper==1.2.1
 openpyxl==3.1.5
 python-docx==1.2.0
-argos-translate==1.11.0
+argostranslate==1.11.0
