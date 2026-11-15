@@ -87,3 +87,8 @@ Backend একই LAN-এ 0.0.0.0:8000-এ চলে এবং এতে login/t
 API: GET /health, GET /languages (Whisper-এর পূর্ণ language list), POST /jobs, GET /jobs/{job_id}, GET /jobs/{job_id}/stream, GET /jobs/{job_id}/download?kind=video|srt|vtt|ass|ssa|sbv|txt|timecoded-txt|csv|tsv|xlsx|docx|md|html|json|insights|all-exports.
 
 Backend test: backend ফোল্ডারে requirements install করার পর python -m unittest discover -s tests -v চালাও।
+
+
+## Windows: Backend স্বয়ংক্রিয়ভাবে চালু
+
+Self-contained Windows build-এ Python, FastAPI, Whisper runtime এবং FFmpeg bundled থাকে। ZIP extract করে `ai_auto_subtitle_generator.exe` চালালেই অ্যাপ নিজে local backend start করে এবং `http://127.0.0.1:8000` health check করে। আলাদা করে Python, pip, FFmpeg বা `start_backend.bat` চালাতে হয় না। Whisper model প্রথমবার ব্যবহারের সময় internet থেকে download হবে; model cache Windows-এর LocalAppData-তে রাখা হয়। Backend process অ্যাপ বন্ধ হলে বন্ধ হয়ে যায়। Android APK-তে এই Windows Python backend bundled নয়; Android-এর জন্য আলাদা on-device/backend architecture প্রয়োজন।
