@@ -159,6 +159,65 @@ def validate_caption_font(font_family: str) -> str:
     return selected
 
 
+
+def get_argos_translator(source_code: str, target_code: str):
+    """Find an installed Argos route or download a direct/English-pivot route once."""
+    if argos_translate is None or argos_package is None:
+        raise RuntimeError(
+            "The offline translation engine is unavailable in this installation. "
+            "Reinstall the app with the bundled translation runtime."
+        )
+    if source_code == target_code:
+        raise RuntimeError("The source and target languages are the same.")
+
+    def lookup():
+        installed = {language.code: language for language in argos_translate.get_installed_languages()}
+        source = installed.get(source_code)
+        target = installed.get(target_code)
+        if source is None or target is None:
+            return None
+        try:
+            return source.get_translation(target)
+        except Exception:
+            return None
+
+    translator = lookup()
+    if translator is not None:
+        return translator
+
+    try:
+        argos_package.update_package_index()
+        available = argos_package.get_available_packages()
+        direct = [package for package in available if package.from_code == source_code and package.to_code == target_code]
+        chosen = direct
+        if not chosen and source_code != "en" and target_code != "en":
+            first = [package for package in available if package.from_code == source_code and package.to_code == "en"]
+            second = [package for package in available if package.from_code == "en" and package.to_code == target_code]
+            if first and second:
+                chosen = [first[0], second[0]]
+        if not chosen:
+            raise RuntimeError(
+                f"No downloadable offline translation route is available for {source_code} → {target_code}. "
+                "Choose another subtitle language."
+            )
+        for package in chosen:
+            package.install()
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(
+            f"Could not download or install the offline translation model for "
+            f"{source_code} → {target_code}: {exc}"
+        ) from exc
+
+    translator = lookup()
+    if translator is None:
+        raise RuntimeError(
+            f"The offline translation model for {source_code} → {target_code} was installed, "
+            "but the translation route is still unavailable. Restart the AI engine and try again."
+        )
+    return translator
+
 def translate_segment_data(
     segment_data: list[dict[str, Any]], source_code: str, target_code: str
 ) -> list[dict[str, Any]]:
@@ -730,8 +789,6 @@ def job_insights(job_id: str) -> dict[str, Any]:
 
 @app.post("/jobs/{job_id}/translate", status_code=201)
 def translate_job(job_id: str, payload: TranslationRequest) -> dict[str, Any]:
-    if argos_translate is None:
-        raise HTTPException(status_code=503, detail="The offline translation engine is unavailable. Install the Argos engine and the required language pair using the translation model installer.")
     job = get_job(job_id)
     if job.get("status") != "completed":
         raise HTTPException(status_code=409, detail="Transcription and rendering must finish first.")
@@ -741,28 +798,16 @@ def translate_job(job_id: str, payload: TranslationRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="The source language was not detected. Select a specific recognition language and transcribe again.")
     if source_code == target_code:
         raise HTTPException(status_code=400, detail="The source and target languages are the same.")
-    installed = {language.code: language for language in argos_translate.get_installed_languages()}
-    source = installed.get(source_code)
-    target = installed.get(target_code)
-    if source is None or target is None:
-        raise HTTPException(status_code=409, detail=f"Argos does not have the language model for {source_code} → {target_code}  installed. Install the required pair with the translation model installer.")
-    translator = source.get_translation(target)
-    if translator is None:
-        raise HTTPException(status_code=409, detail=f"{source_code} → {target_code}  translation path is not installed.")
 
     job_dir = Path(job["job_dir"])
     source_path = job_dir / "original_segments.json"
     if not source_path.exists():
         source_path = job_dir / "segments.json"
     source_data = json.loads(source_path.read_text(encoding="utf-8"))
-    translated_data = []
-    for item in source_data:
-        translated_data.append({
-            "id": item["id"],
-            "start": float(item["start"]),
-            "end": float(item["end"]),
-            "text": translator.translate(item.get("text", "")) if item.get("text", "").strip() else "",
-        })
+    try:
+        translated_data = translate_segment_data(source_data, source_code, target_code)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     translated_segments = hydrate_segments(translated_data)
     make_srt(translated_segments, job_dir / "translated.srt")
     make_vtt(translated_segments, job_dir / "translated.vtt")

@@ -110,7 +110,7 @@ jobs:
         run: |
           $runtime = 'flutter_app/dist/Windows_Portable/backend_runtime'
           New-Item -ItemType Directory -Force -Path $runtime | Out-Null
-          python -m PyInstaller --noconfirm --clean --onedir --noconsole --name ai_subtitle_backend --distpath $runtime --workpath "$env:RUNNER_TEMP/pyinstaller-work" --specpath "$env:RUNNER_TEMP/pyinstaller-spec" --collect-all faster_whisper --collect-all ctranslate2 --collect-all av --collect-all tokenizers --collect-all huggingface_hub --collect-all yaml --hidden-import uvicorn.logging --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.lifespan.on "$PWD/backend/desktop_server.py"
+          python -m PyInstaller --noconfirm --clean --onedir --noconsole --name ai_subtitle_backend --distpath $runtime --workpath "$env:RUNNER_TEMP/pyinstaller-work" --specpath "$env:RUNNER_TEMP/pyinstaller-spec" --collect-all faster_whisper --collect-all ctranslate2 --collect-all av --collect-all tokenizers --collect-all huggingface_hub --collect-all yaml --collect-all argostranslate --collect-all sentencepiece --hidden-import uvicorn.logging --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.lifespan.on "$PWD/backend/desktop_server.py"
           if ($LASTEXITCODE -ne 0) { throw 'PyInstaller backend packaging failed' }
           $ffmpeg = Get-ChildItem 'C:\ProgramData\chocolatey\lib' -Filter 'ffmpeg.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
           if (-not $ffmpeg) { throw 'Could not locate the real FFmpeg executable installed by Chocolatey' }

@@ -1761,7 +1761,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     ),
     const SizedBox(height: 7),
     const Text(
-      'Translated output requires the matching offline language model to be installed. The original spoken language is detected separately.',
+      'The first translation downloads the matching offline model. Internet is needed once; later translations can run offline. The spoken language is detected separately.',
       style: TextStyle(fontSize: 9, color: Color(0xFF8798B1), height: 1.45),
     ),
     const SizedBox(height: 17),
