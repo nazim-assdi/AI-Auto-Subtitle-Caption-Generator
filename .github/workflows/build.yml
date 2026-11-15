@@ -110,8 +110,11 @@ jobs:
           $checksumFile = Join-Path $env:RUNNER_TEMP 'ffmpeg-release-full-shared.7z.sha256'
           $archiveUrl = 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full-shared.7z'
           Invoke-WebRequest -Uri $archiveUrl -OutFile $archive
-          Invoke-WebRequest -Uri "$archiveUrl.sha256" -OutFile $checksumFile
-          $expected = (Get-Content $checksumFile -Raw).Trim().Split()[0].ToUpperInvariant()
+          $checksumUrl = $archiveUrl + '.sha256'
+          Invoke-WebRequest -Uri $checksumUrl -OutFile $checksumFile
+          $checksumText = Get-Content $checksumFile -Raw
+          $expected = [regex]::Match($checksumText, '[A-Fa-f0-9]{64}').Value.ToUpperInvariant()
+          if (-not $expected) { throw 'The official FFmpeg SHA-256 file did not contain a valid checksum.' }
           $actual = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToUpperInvariant()
           if ($actual -ne $expected) {
             throw "FFmpeg SHA-256 mismatch. Expected $expected but received $actual"
