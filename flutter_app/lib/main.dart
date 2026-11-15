@@ -628,7 +628,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Trimmed MP4 is ready. এখন Download করতে পারো।')),
+          const SnackBar(content: Text('Trimmed MP4 is ready to download.')),
         );
       }
     } catch (e) {
@@ -962,8 +962,8 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     var message = error.toString().replaceFirst('Exception: ', '').trim();
     if (_isConnectionFailure(error)) {
       return Platform.isWindows
-          ? 'Local AI engine-এ সংযোগ পাওয়া যায়নি। অ্যাপটি বন্ধ করে আবার চালু করো; Windows app নিজে engine চালু করার চেষ্টা করবে।'
-          : 'AI processing service-এ সংযোগ পাওয়া যায়নি। নেটওয়ার্ক সংযোগ ও অনুমোদিত companion service পরীক্ষা করো।';
+          ? 'Could not connect to the local AI engine. Close and reopen the app; Windows will try to start the engine automatically.'
+          : 'Could not connect to the AI processing service. Check your network and companion service.';
     }
     message = message.replaceAll(_baseUrl, 'local AI service');
     if (message.length > 700) message = '${message.substring(0, 700)}...';

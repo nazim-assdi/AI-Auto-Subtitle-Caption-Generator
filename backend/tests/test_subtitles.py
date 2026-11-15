@@ -42,7 +42,7 @@ class SubtitleHelpersTest(unittest.TestCase):
             ass_path = Path(tmp) / "captions.ass"
             make_srt([self.segment], srt_path)
             make_vtt([self.segment], vtt_path)
-            make_ass([self.segment], 1080, 1920, "hormozi", ass_path)
+            make_ass([self.segment], 1080, 1920, "hormozi", ass_path, font_family="Arial")
             srt = srt_path.read_text(encoding="utf-8-sig")
             vtt = vtt_path.read_text(encoding="utf-8")
             ass = ass_path.read_text(encoding="utf-8")
@@ -51,6 +51,7 @@ class SubtitleHelpersTest(unittest.TestCase):
             self.assertIn("00:00:00.000 --> 00:00:01.500", vtt)
             self.assertEqual(ass.count("Dialogue:"), 2)
             self.assertIn("40D7FF", ass)
+            self.assertIn("Style: Default,Arial,", ass)
 
     def test_phrase_limits(self):
         words = [
