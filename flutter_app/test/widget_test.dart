@@ -52,7 +52,11 @@ void main() {
     await tester.tap(find.text('Settings').last);
     await tester.pumpAndSettle();
     expect(find.text('AI processing service'), findsOneWidget);
-    expect(find.text('BACKEND ENDPOINT'), findsOneWidget);
+    expect(find.text('Automatic local connection'), findsOneWidget);
+    expect(find.text('Check AI engine'), findsOneWidget);
+    expect(find.textContaining('127.0.0.1'), findsNothing);
+    expect(find.textContaining('10.0.2.2'), findsNothing);
+    expect(find.text('Backend URL'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

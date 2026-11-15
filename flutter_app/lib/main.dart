@@ -154,7 +154,6 @@ class CaptionHomePage extends StatefulWidget {
 }
 
 class _CaptionHomePageState extends State<CaptionHomePage> {
-  late final TextEditingController _serverController;
   PlatformFile? _selectedFile;
   int? _selectedFileSize;
   String _language = 'auto';
@@ -190,14 +189,12 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   Process? _localBackendProcess;
   bool _backendStarting = false;
 
-  String get _baseUrl => _serverController.text.trim().replaceFirst(RegExp(r'/+$'), '');
+  // Internal-only endpoint. Never render this value in the application UI.
+  String get _baseUrl => Platform.isAndroid ? 'http://10.0.2.2:8000' : 'http://127.0.0.1:8000';
 
   @override
   void initState() {
     super.initState();
-    _serverController = TextEditingController(
-      text: Platform.isAndroid ? 'http://10.0.2.2:8000' : 'http://127.0.0.1:8000',
-    );
     _hotwordsController = TextEditingController();
     if (Platform.isWindows) {
       unawaited(_ensureLocalBackend());
@@ -274,7 +271,6 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
 
   @override
   void dispose() {
-    _serverController.dispose();
     _hotwordsController.dispose();
     unawaited(_durationSubscription?.cancel() ?? Future<void>.value());
     _player?.dispose();
@@ -376,11 +372,6 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       _showError('আগে একটি ভিডিও নির্বাচন করো।');
       return;
     }
-    if (_baseUrl.isEmpty || !(_baseUrl.startsWith('http://') || _baseUrl.startsWith('https://'))) {
-      _showError('সঠিক API URL দাও। যেমন: http://192.168.0.105:8000');
-      return;
-    }
-
     setState(() {
       _busy = true;
       _progress = 0.01;
@@ -930,10 +921,11 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   String _friendlyError(Object error) {
     var message = error.toString().replaceFirst('Exception: ', '').trim();
     if (_isConnectionFailure(error)) {
-      return 'Backend চালু নেই অথবা এই URL/port-এ সংযোগ গ্রহণ করছে না: $_baseUrl'
-          '\n\nWindows: repository-এর backend\\start_backend.bat চালাও এবং Terminal খোলা রাখো। প্রথমবার হলে আগে backend\\install_backend.bat চালাতে হবে। তারপর Test চাপো।'
-          '\nAndroid: PC ও ফোন একই Wi-Fi-তে রাখো এবং Backend URL-এ PC-এর LAN IP দাও (যেমন http://192.168.0.105:8000)।';
+      return Platform.isWindows
+          ? 'Local AI engine-এ সংযোগ পাওয়া যায়নি। অ্যাপটি বন্ধ করে আবার চালু করো; Windows app নিজে engine চালু করার চেষ্টা করবে।'
+          : 'AI processing service-এ সংযোগ পাওয়া যায়নি। নেটওয়ার্ক সংযোগ ও অনুমোদিত companion service পরীক্ষা করো।';
     }
+    message = message.replaceAll(_baseUrl, 'local AI service');
     if (message.length > 700) message = '${message.substring(0, 700)}...';
     return message;
   }
@@ -1002,7 +994,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       _buildSideNavItem(1, Icons.add_box_rounded, 'New project', 'Create captions'),
       _buildSideNavItem(2, Icons.content_cut_rounded, 'Video editor', 'Preview & trim'),
       _buildSideNavItem(3, Icons.file_download_rounded, 'Export center', 'Download files'),
-      _buildSideNavItem(4, Icons.tune_rounded, 'Settings', 'Backend & defaults'),
+      _buildSideNavItem(4, Icons.tune_rounded, 'Settings', 'Engine & defaults'),
       const Spacer(),
       Container(
         padding: const EdgeInsets.all(14),
@@ -1018,7 +1010,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
           const SizedBox(height: 9),
           Text(_serverOkay ? 'Connected & ready' : 'Waiting for backend', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _serverOkay ? const Color(0xFF65DDAE) : const Color(0xFFFFCB76))),
           const SizedBox(height: 4),
-          Text(_serverOkay ? 'Whisper + FFmpeg online' : 'Start your local AI service', style: const TextStyle(fontSize: 10, color: Color(0xFF8D9AB1))),
+          Text(_serverOkay ? 'Whisper + FFmpeg online' : (Platform.isWindows ? 'Starting local AI engine' : 'AI engine not connected'), style: const TextStyle(fontSize: 10, color: Color(0xFF8D9AB1))),
           const SizedBox(height: 9),
           SizedBox(width: double.infinity, child: OutlinedButton(
             onPressed: _busy ? null : _checkServer,
@@ -1489,7 +1481,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     const SizedBox(height: 10),
     _quickActionRow(Icons.file_download_outlined, 'Open export center', 'Download your project files', () => setState(() => _activePage = 2)),
     const SizedBox(height: 10),
-    _quickActionRow(Icons.settings_outlined, 'Connection settings', 'Configure your local AI backend', () => setState(() => _activePage = 3)),
+    _quickActionRow(Icons.settings_outlined, 'AI engine settings', 'View automatic engine status', () => setState(() => _activePage = 3)),
   ]));
 
   Widget _quickActionRow(IconData icon, String title, String subtitle, VoidCallback onTap) => InkWell(
@@ -1557,7 +1549,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     _panel(padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12), child: Row(children: [
       const Icon(Icons.shield_outlined, size: 17, color: Color(0xFF70D7C3)),
       const SizedBox(width: 9),
-      const Expanded(child: Text('Your footage is processed by the AI backend you configure. No account sign-in is required.', style: TextStyle(fontSize: 10, color: Color(0xFF9AAAC0), height: 1.45))),
+      const Expanded(child: Text('Your footage is processed by the built-in local AI engine. No account sign-in is required.', style: TextStyle(fontSize: 10, color: Color(0xFF9AAAC0), height: 1.45))),
       if (_jobId != null && !_busy && _error == null) FilledButton.tonalIcon(onPressed: () => setState(() => _activePage = 3), icon: const Icon(Icons.arrow_forward_rounded, size: 16), label: const Text('View exports')),
     ])),
   ]));
@@ -2261,17 +2253,29 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
         const SizedBox(height: 19),
         Container(height: 1, color: const Color(0xFF2D3D55)),
         const SizedBox(height: 17),
-        _fieldGroupLabel('BACKEND ENDPOINT', 'Enter the address where your local AI service is listening.'),
-        TextField(
-          controller: _serverController,
-          enabled: !_busy,
-          keyboardType: TextInputType.url,
-          decoration: const InputDecoration(
-            labelText: 'Backend URL',
-            hintText: 'http://127.0.0.1:8000',
-            prefixIcon: Icon(Icons.link_rounded),
-            helperText: 'Windows: 127.0.0.1  •  Physical Android: use your PC LAN IP',
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF101B2E),
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(color: const Color(0xFF2D3D55)),
           ),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Icon(Icons.auto_mode_rounded, color: Color(0xFF9B8CFF), size: 20),
+            const SizedBox(width: 11),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Automatic local connection', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 4),
+              Text(
+                Platform.isWindows
+                    ? 'The app starts and manages its built-in AI engine automatically. Connection details stay hidden.'
+                    : 'The service connection is managed internally. Connection details are not shown in the app.',
+                style: const TextStyle(fontSize: 9, color: Color(0xFF8FA0B8), height: 1.45),
+              ),
+            ])),
+            const SizedBox(width: 8),
+            const Icon(Icons.lock_outline_rounded, color: Color(0xFF70DDB2), size: 17),
+          ]),
         ),
         const SizedBox(height: 13),
         LayoutBuilder(builder: (context, constraints) {
@@ -2282,26 +2286,14 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
             Expanded(child: Text(_serverStatusText, style: TextStyle(fontSize: 10, color: _serverOkay ? const Color(0xFF70DDB2) : const Color(0xFFFFCC83), height: 1.45))),
           ]);
           final button = FilledButton.icon(
-            onPressed: _busy ? null : _checkServer,
+            onPressed: _busy ? null : (Platform.isWindows ? _ensureLocalBackend : _checkServer),
             icon: const Icon(Icons.wifi_tethering_rounded, size: 16),
-            label: const Text('Test connection'),
+            label: const Text('Check AI engine'),
             style: FilledButton.styleFrom(backgroundColor: const Color(0xFF766BE7), padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12), textStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
           );
           if (compact) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [status, const SizedBox(height: 11), button]);
           return Row(children: [Expanded(child: status), const SizedBox(width: 12), button]);
         }),
-        if (Platform.isAndroid) ...[
-          const SizedBox(height: 13),
-          Container(
-            padding: const EdgeInsets.all(11),
-            decoration: BoxDecoration(color: const Color(0xFF3A3020), borderRadius: BorderRadius.circular(11), border: Border.all(color: const Color(0xFF6A5732))),
-            child: const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Icon(Icons.wifi_rounded, color: Color(0xFFFFCC83), size: 16),
-              SizedBox(width: 8),
-              Expanded(child: Text('For a physical Android phone, connect to the same Wi-Fi as your PC and enter the PC LAN IP. 10.0.2.2 is for Android emulators only.', style: TextStyle(fontSize: 9, color: Color(0xFFE8C995), height: 1.45))),
-            ]),
-          ),
-        ],
       ]),
     ),
     const SizedBox(height: 15),
@@ -2312,7 +2304,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       final cards = [
         _settingsInfoCard(Icons.translate_rounded, 'Language recognition', 'Searchable multilingual Whisper recognition with automatic language detection.', const Color(0xFF78D9CB)),
         _settingsInfoCard(Icons.memory_rounded, 'Model profiles', 'Tiny for speed, Base for balance and Small for higher recognition accuracy.', const Color(0xFFB3A5FF)),
-        _settingsInfoCard(Icons.shield_outlined, 'Processing privacy', 'Videos are sent to the backend URL configured above for local processing.', const Color(0xFFF0BE7E)),
+        _settingsInfoCard(Icons.shield_outlined, 'Processing privacy', 'Videos are processed by the local AI engine on this device.', const Color(0xFFF0BE7E)),
       ];
       if (wide) return Row(crossAxisAlignment: CrossAxisAlignment.start, children: cards.map((card) => Expanded(child: Padding(padding: const EdgeInsets.only(right: 10), child: card))).toList());
       return Column(children: cards.map((card) => Padding(padding: const EdgeInsets.only(bottom: 10), child: card)).toList());
@@ -2323,7 +2315,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       child: Row(children: [
         const Icon(Icons.info_outline_rounded, color: Color(0xFF8D9BB2), size: 18),
         const SizedBox(width: 10),
-        const Expanded(child: Text('This workspace connects to a local AI backend. Keep the service available while generating or exporting a project.', style: TextStyle(color: Color(0xFF8D9BB2), fontSize: 9, height: 1.5))),
+        const Expanded(child: Text('This workspace manages its AI processing service automatically. Keep the app open while generating or exporting a project.', style: TextStyle(color: Color(0xFF8D9BB2), fontSize: 9, height: 1.5))),
         TextButton(onPressed: () => setState(() => _activePage = 0), child: const Text('Overview')),
       ]),
     ),
