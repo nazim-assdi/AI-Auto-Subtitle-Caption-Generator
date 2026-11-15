@@ -414,6 +414,8 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       _busy = true;
       _progress = 0.01;
       _stage = 'Checking the AI engine connection...';
+      _subtitleOutputLanguage = 'same';
+      _translationTarget = null;
       _error = null;
       _jobId = null;
       _transcriptPreview = null;

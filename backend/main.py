@@ -110,14 +110,14 @@ class TrimRequest(BaseModel):
 def validate_trim_range(start_seconds: float, end_seconds: float, video_duration: float) -> float:
     values = (start_seconds, end_seconds, video_duration)
     if not all(math.isfinite(value) for value in values):
-        raise ValueError("Trim time finite number হতে হবে।")
+        raise ValueError("Trim time values must be finite numbers.")
     if start_seconds < 0 or end_seconds <= start_seconds:
-        raise ValueError("End time অবশ্যই Start time-এর পরে হতে হবে।")
+        raise ValueError("End time must be later than start time.")
     if video_duration <= 0 or start_seconds >= video_duration or end_seconds > video_duration + 0.15:
-        raise ValueError("Trim range ভিডিওর duration-এর বাইরে চলে গেছে।")
+        raise ValueError("The selected trim range is outside the video duration.")
     duration = end_seconds - start_seconds
     if duration < 0.25:
-        raise ValueError("কমপক্ষে 0.25 সেকেন্ডের অংশ নির্বাচন করো।")
+        raise ValueError("Select a segment of at least 0.25 seconds.")
     return round(duration, 3)
 
 
@@ -131,7 +131,7 @@ def get_job(job_id: str) -> dict[str, Any]:
     with jobs_lock:
         job = jobs.get(job_id)
         if not job:
-            raise HTTPException(status_code=404, detail="কাজটি পাওয়া যায়নি। Backend restart হলে পুরোনো job status আর নাও থাকতে পারে।")
+            raise HTTPException(status_code=404, detail="Job not found. Its status may no longer be available after the AI engine restarts.")
         return dict(job)
 
 
@@ -214,7 +214,7 @@ def get_ffmpeg_capabilities() -> dict[str, Any]:
         "ffmpeg_version": None,
     }
     if not ffmpeg_path:
-        result["diagnostic"] = "FFmpeg PATH-এ পাওয়া যায়নি।"
+        result["diagnostic"] = "FFmpeg was not found on the system PATH."
         return result
     try:
         version = subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
@@ -224,13 +224,13 @@ def get_ffmpeg_capabilities() -> dict[str, Any]:
         result["ass_filter_ready"] = "ass" in available
         result["subtitles_filter_ready"] = "subtitles" in available
         if not ffprobe_path:
-            result["diagnostic"] = "FFprobe পাওয়া যায়নি; FFmpeg-এর একই distribution থেকে FFprobe install করো।"
+            result["diagnostic"] = "FFprobe was not found. Install FFprobe from the same FFmpeg distribution."
         elif not result["ass_filter_ready"]:
-            result["diagnostic"] = "FFmpeg-এ ASS/libass filter নেই। libass support-সহ full FFmpeg build install করতে হবে।"
+            result["diagnostic"] = "The FFmpeg build does not include the ASS/libass filter. Install a full FFmpeg build with libass support."
         else:
-            result["diagnostic"] = "FFmpeg, FFprobe ও ASS subtitle renderer প্রস্তুত।"
+            result["diagnostic"] = "FFmpeg, FFprobe and the ASS subtitle renderer are ready."
     except Exception as exc:
-        result["diagnostic"] = f"FFmpeg diagnostics ব্যর্থ: {exc}"
+        result["diagnostic"] = f"FFmpeg diagnostics failed: {exc}"
     return result
 
 
@@ -241,7 +241,7 @@ def run_command(command: list[str], cwd: Optional[Path] = None) -> subprocess.Co
             text=True, encoding="utf-8", errors="replace", check=False,
         )
     except FileNotFoundError as exc:
-        raise RuntimeError("FFmpeg পাওয়া যায়নি। Windows-এ FFmpeg install করে PATH-এ যোগ করো।") from exc
+        raise RuntimeError("FFmpeg was not found. Install FFmpeg and add it to PATH.") from exc
     if result.returncode != 0:
         message = (result.stderr or result.stdout or "Unknown FFmpeg error").strip()
         raise RuntimeError(message[-5000:])
@@ -255,7 +255,7 @@ def probe_video(ffprobe: str, input_path: Path) -> tuple[int, int]:
     ], cwd=input_path.parent)
     streams = json.loads(result.stdout or "{}").get("streams") or []
     if not streams:
-        raise RuntimeError("ভিডিও ফাইলের video stream পাওয়া যায়নি।")
+        raise RuntimeError("No video stream was found in the selected file.")
     return int(streams[0].get("width", 1080)), int(streams[0].get("height", 1920))
 
 
@@ -353,7 +353,7 @@ def build_insights(segment_data: list[dict[str, Any]], language: str) -> dict[st
                 "start": round(float(item["start"]), 2),
                 "end": round(float(item["end"]), 2),
                 "text": text,
-                "reason": "কৌতূহল/জোরালো বাক্য — creator review suggestion",
+                "reason": "Heuristic hook suggestion — review this moment before publishing.",
                 "heuristic_score": score,
             })
     return {
@@ -401,7 +401,7 @@ def write_project_exports(job_dir: Path, segment_data: list[dict[str, Any]], sty
 def render_video(job_id: str, source_path: Path, job_dir: Path, style: str) -> int:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
-        raise RuntimeError("FFmpeg পাওয়া যায়নি।")
+        raise RuntimeError("FFmpeg was not found.")
     temp_output = job_dir / "captioned_video.next.mp4"
     run_command([
         ffmpeg, "-y", "-i", source_path.name, "-vf", "ass=captions.ass:shaping=complex",
@@ -410,7 +410,7 @@ def render_video(job_id: str, source_path: Path, job_dir: Path, style: str) -> i
         "-movflags", "+faststart", temp_output.name,
     ], cwd=job_dir)
     if not temp_output.exists() or temp_output.stat().st_size == 0:
-        raise RuntimeError("FFmpeg output video তৈরি করতে পারেনি।")
+        raise RuntimeError("FFmpeg could not create the output video.")
     final_output = job_dir / "captioned_video.mp4"
     temp_output.replace(final_output)
     return final_output.stat().st_size
@@ -422,9 +422,9 @@ def process_job(job_id: str, source_path: Path, model_size: str, language: str, 
     try:
         capabilities = get_ffmpeg_capabilities()
         if not capabilities["ffmpeg_ready"]:
-            raise RuntimeError(str(capabilities.get("diagnostic") or "FFmpeg/FFprobe ইনস্টল নেই।"))
+            raise RuntimeError(str(capabilities.get("diagnostic") or "FFmpeg or FFprobe is not installed."))
         if not capabilities["ass_filter_ready"]:
-            raise RuntimeError("এই FFmpeg build-এ ASS/libass subtitle renderer নেই। FFmpeg full/shared build install করে Terminal restart করো। Diagnostics: " + str(capabilities.get("diagnostic")))
+            raise RuntimeError("This FFmpeg build does not include the ASS/libass subtitle renderer. Install a full/shared FFmpeg build. Diagnostics: " + str(capabilities.get("diagnostic")))
         update_job(job_id, status="processing", progress=8, stage="Preparing audio from video")
         run_command([
             shutil.which("ffmpeg") or "ffmpeg", "-y", "-i", source_path.name, "-vn",
@@ -451,7 +451,7 @@ def process_job(job_id: str, source_path: Path, model_size: str, language: str, 
                     fraction = min(1.0, float(getattr(segment, "end", 0.0)) / duration)
                     update_job(job_id, progress=20 + int(fraction * 36), stage="Transcribing speech with Whisper")
         if not raw_segments:
-            raise RuntimeError("ভিডিওতে শনাক্ত করার মতো কোনো কথা পাওয়া যায়নি। অন্য ভিডিও দিয়ে চেষ্টা করো।")
+            raise RuntimeError("No speech could be detected in the video. Try another video or check the audio track.")
         source_segments = serialize_segments(raw_segments)
         detected_language = str(getattr(info, "language", "auto") or "auto").lower()
         output_language = detected_language
@@ -511,7 +511,7 @@ def rerender_job(job_id: str, style: str, words_per_line: int, position: str, fo
         insights = write_project_exports(job_dir, segment_data, style, words_per_line, position, output_language, font_family)
         output_size = render_video(job_id, source_path, job_dir, style)
         update_job(
-            job_id, status="completed", progress=100, stage="নতুন caption-সহ render সম্পন্ন",
+            job_id, status="completed", progress=100, stage="Updated captions rendered successfully",
             style=style, words_per_line=words_per_line, position=position, font_family=font_family,
             output_size=output_size,
             insights_summary={
@@ -522,7 +522,7 @@ def rerender_job(job_id: str, style: str, words_per_line: int, position: str, fo
             },
         )
     except Exception as exc:
-        update_job(job_id, status="failed", progress=0, stage="Re-render ব্যর্থ", error=str(exc)[-5000:])
+        update_job(job_id, status="failed", progress=0, stage="Re-render failed", error=str(exc)[-5000:])
 
 
 @app.get("/health")
@@ -547,14 +547,14 @@ def supported_languages() -> dict[str, Any]:
 @app.get("/translation/status")
 def translation_status() -> dict[str, Any]:
     if argos_translate is None or argos_package is None:
-        return {"enabled": False, "installed_languages": [], "installed_pairs": [], "message": "ঐচ্ছিক offline translation engine install করা হয়নি।"}
+        return {"enabled": False, "installed_languages": [], "installed_pairs": [], "message": "The optional offline translation engine is not installed."}
     languages = argos_translate.get_installed_languages()
     packages = argos_package.get_installed_packages()
     return {
         "enabled": True,
         "installed_languages": [{"code": language.code, "name": language.name} for language in languages],
         "installed_pairs": [{"from": package.from_code, "to": package.to_code} for package in packages],
-        "message": "Install করা language models দিয়ে offline translation চালু।",
+        "message": "Offline translation is enabled for installed language models.",
     }
 
 
@@ -562,7 +562,7 @@ def translation_status() -> dict[str, Any]:
 def translation_options(job_id: str) -> dict[str, Any]:
     job = get_job(job_id)
     if job.get("status") != "completed":
-        raise HTTPException(status_code=409, detail="প্রথমে transcription সম্পন্ন হতে হবে।")
+        raise HTTPException(status_code=409, detail="Transcription must finish first.")
     source_code = str(job.get("detected_language") or "").lower()
     if not source_code or source_code == "auto":
         return {"enabled": False, "source_language": source_code, "targets": []}
@@ -599,19 +599,19 @@ async def create_job(
     font_family: str = Form("Segoe UI"),
 ) -> dict[str, Any]:
     if not file.filename:
-        raise HTTPException(status_code=400, detail="ফাইলের নাম পাওয়া যায়নি।")
+        raise HTTPException(status_code=400, detail="The uploaded file name is missing.")
     extension = Path(file.filename).suffix.lower()
     if extension not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="MP4, MOV, MKV, WEBM, AVI বা M4V ভিডিও আপলোড করো।")
+        raise HTTPException(status_code=400, detail="Upload an MP4, MOV, MKV, WEBM, AVI or M4V video.")
     language = language.strip().lower()
     if language not in ALLOWED_LANGUAGES:
-        raise HTTPException(status_code=400, detail="নির্বাচিত ভাষা সমর্থিত নয়।")
+        raise HTTPException(status_code=400, detail="The selected recognition language is not supported.")
     if model_size not in ALLOWED_MODELS:
-        raise HTTPException(status_code=400, detail="tiny, base অথবা small মডেল নির্বাচন করো।")
+        raise HTTPException(status_code=400, detail="Select the tiny, base or small model.")
     if style not in STYLE_COLORS:
-        raise HTTPException(status_code=400, detail="অজানা caption theme।")
+        raise HTTPException(status_code=400, detail="Unknown caption style.")
     if not 2 <= words_per_line <= 8:
-        raise HTTPException(status_code=400, detail="এক লাইনে ২ থেকে ৮টি শব্দ বেছে নাও।")
+        raise HTTPException(status_code=400, detail="Choose between 2 and 8 words per caption line.")
     if position not in {"bottom", "top", "middle"}:
         raise HTTPException(status_code=400, detail="Caption position must be bottom, top or middle.")
     target_language = target_language.strip().lower()
@@ -622,7 +622,7 @@ async def create_job(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if len(hotwords) > 1000:
-        raise HTTPException(status_code=400, detail="Vocabulary boost সর্বোচ্চ ১০০০ অক্ষর।")
+        raise HTTPException(status_code=400, detail="Vocabulary hints can contain up to 1,000 characters.")
 
     job_id = uuid.uuid4().hex
     job_dir = JOBS_DIR / job_id
@@ -637,7 +637,7 @@ async def create_job(
                     break
                 copied += len(chunk)
                 if copied > MAX_UPLOAD_BYTES:
-                    raise HTTPException(status_code=413, detail=f"সর্বোচ্চ ভিডিও সাইজ {MAX_UPLOAD_MB} MB।")
+                    raise HTTPException(status_code=413, detail=f"Maximum video size: {MAX_UPLOAD_MB} MB।")
                 destination.write(chunk)
     except Exception:
         shutil.rmtree(job_dir, ignore_errors=True)
@@ -646,7 +646,7 @@ async def create_job(
         await file.close()
     if copied == 0:
         shutil.rmtree(job_dir, ignore_errors=True)
-        raise HTTPException(status_code=400, detail="খালি ভিডিও ফাইল আপলোড করা যাবে না।")
+        raise HTTPException(status_code=400, detail="The uploaded video file is empty.")
 
     with jobs_lock:
         jobs[job_id] = {
@@ -671,10 +671,10 @@ def job_status(job_id: str) -> dict[str, Any]:
 def get_transcript(job_id: str) -> dict[str, Any]:
     job = get_job(job_id)
     if job.get("status") != "completed":
-        raise HTTPException(status_code=409, detail="প্রথমে transcription ও rendering সম্পন্ন হতে হবে।")
+        raise HTTPException(status_code=409, detail="Transcription and rendering must finish first.")
     path = Path(job["job_dir"]) / "segments.json"
     if not path.exists():
-        raise HTTPException(status_code=404, detail="Transcript পাওয়া যায়নি।")
+        raise HTTPException(status_code=404, detail="Transcript not found.")
     segments = json.loads(path.read_text(encoding="utf-8"))
     return {"segments": [{"id": x["id"], "start": x["start"], "end": x["end"], "text": x["text"]} for x in segments]}
 
@@ -683,26 +683,26 @@ def get_transcript(job_id: str) -> dict[str, Any]:
 def update_transcript(job_id: str, payload: TranscriptUpdate, background_tasks: BackgroundTasks) -> dict[str, Any]:
     job = get_job(job_id)
     if job.get("status") != "completed":
-        raise HTTPException(status_code=409, detail="এই job এখন edit করা যাবে না।")
+        raise HTTPException(status_code=409, detail="This job cannot be edited in its current state.")
     job_dir = Path(job["job_dir"])
     source_path = Path(job["source_path"])
     if not source_path.exists():
-        raise HTTPException(status_code=404, detail="Original video পাওয়া যায়নি। Job delete হয়েছে কি না দেখো।")
+        raise HTTPException(status_code=404, detail="The original video is missing. The job may have been deleted.")
     data_path = job_dir / "segments.json"
     segment_data = json.loads(data_path.read_text(encoding="utf-8"))
     if len(payload.texts) != len(segment_data):
-        raise HTTPException(status_code=400, detail=f"Transcript line সংখ্যা বদলানো যাবে না; ঠিক {len(segment_data)}টি line পাঠাও।")
+        raise HTTPException(status_code=400, detail=f"The number of transcript lines cannot change. Exactly {len(segment_data)} lines must be submitted.")
     for item, new_text in zip(segment_data, payload.texts):
         clean = new_text.strip().replace("\n", " ")
         if len(clean) > 1000:
-            raise HTTPException(status_code=400, detail="প্রতিটি caption line সর্বোচ্চ ১০০০ অক্ষরের হতে পারে।")
+            raise HTTPException(status_code=400, detail="Each caption line can contain at most 1,000 characters.")
         if clean != item["text"]:
             item["text"] = clean
             # Rebuild a changed cue's word timing proportionally from the edited text.
             item["words"] = []
     style = payload.style or job.get("style", "hormozi")
     if style not in STYLE_COLORS:
-        raise HTTPException(status_code=400, detail="অজানা caption theme।")
+        raise HTTPException(status_code=400, detail="Unknown caption style.")
     words_per_line = payload.words_per_line or int(job.get("words_per_line", 4))
     position = payload.position or job.get("position", "bottom")
     try:
@@ -721,34 +721,34 @@ def update_transcript(job_id: str, payload: TranscriptUpdate, background_tasks: 
 def job_insights(job_id: str) -> dict[str, Any]:
     job = get_job(job_id)
     if job.get("status") != "completed":
-        raise HTTPException(status_code=409, detail="প্রথমে processing সম্পন্ন হতে হবে।")
+        raise HTTPException(status_code=409, detail="Processing must finish first.")
     path = Path(job["job_dir"]) / "creator_report.json"
     if not path.exists():
-        raise HTTPException(status_code=404, detail="Creator report পাওয়া যায়নি।")
+        raise HTTPException(status_code=404, detail="Creator report not found.")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 @app.post("/jobs/{job_id}/translate", status_code=201)
 def translate_job(job_id: str, payload: TranslationRequest) -> dict[str, Any]:
     if argos_translate is None:
-        raise HTTPException(status_code=503, detail="Offline translation engine নেই। backend/install_translation_model.bat চালিয়ে Argos engine ও প্রয়োজনীয় language pair install করো।")
+        raise HTTPException(status_code=503, detail="The offline translation engine is unavailable. Install the Argos engine and the required language pair using the translation model installer.")
     job = get_job(job_id)
     if job.get("status") != "completed":
-        raise HTTPException(status_code=409, detail="প্রথমে transcription ও rendering সম্পন্ন হতে হবে।")
+        raise HTTPException(status_code=409, detail="Transcription and rendering must finish first.")
     source_code = str(job.get("detected_language") or "").lower()
     target_code = payload.target_language.strip().lower()
     if not source_code or source_code == "auto":
-        raise HTTPException(status_code=400, detail="Source language শনাক্ত হয়নি; নির্দিষ্ট language নির্বাচন করে আবার transcription করো।")
+        raise HTTPException(status_code=400, detail="The source language was not detected. Select a specific recognition language and transcribe again.")
     if source_code == target_code:
-        raise HTTPException(status_code=400, detail="Source ও target language একই।")
+        raise HTTPException(status_code=400, detail="The source and target languages are the same.")
     installed = {language.code: language for language in argos_translate.get_installed_languages()}
     source = installed.get(source_code)
     target = installed.get(target_code)
     if source is None or target is None:
-        raise HTTPException(status_code=409, detail=f"Argos-এ {source_code} → {target_code} language model install নেই। install_translation_model.bat দিয়ে প্রয়োজনীয় pair install করো।")
+        raise HTTPException(status_code=409, detail=f"Argos does not have the language model for {source_code} → {target_code}  installed. Install the required pair with the translation model installer.")
     translator = source.get_translation(target)
     if translator is None:
-        raise HTTPException(status_code=409, detail=f"{source_code} → {target_code} translation path install করা নেই।")
+        raise HTTPException(status_code=409, detail=f"{source_code} → {target_code}  translation path is not installed.")
 
     job_dir = Path(job["job_dir"])
     source_path = job_dir / "original_segments.json"
@@ -793,17 +793,17 @@ def translate_job(job_id: str, payload: TranslationRequest) -> dict[str, Any]:
 def trim_video(job_id: str, payload: TrimRequest) -> dict[str, Any]:
     job = get_job(job_id)
     if job.get("status") != "completed":
-        raise HTTPException(status_code=409, detail="প্রথমে caption rendering সম্পন্ন করো।")
+        raise HTTPException(status_code=409, detail="Caption rendering must finish first.")
 
     job_dir = Path(job["job_dir"])
     source_path = job_dir / "captioned_video.mp4"
     if not source_path.exists():
-        raise HTTPException(status_code=404, detail="Captioned video পাওয়া যায়নি।")
+        raise HTTPException(status_code=404, detail="Captioned video not found.")
 
     ffmpeg = shutil.which("ffmpeg")
     ffprobe = shutil.which("ffprobe")
     if not ffmpeg or not ffprobe:
-        raise HTTPException(status_code=503, detail="FFmpeg/FFprobe পাওয়া যায়নি। Backend diagnostics দেখো।")
+        raise HTTPException(status_code=503, detail="FFmpeg/FFprobe is unavailable. Check engine diagnostics.")
 
     try:
         probe = run_command([
@@ -812,7 +812,7 @@ def trim_video(job_id: str, payload: TrimRequest) -> dict[str, Any]:
         ], cwd=job_dir)
         video_duration = float((probe.stdout or "").strip())
     except (RuntimeError, ValueError) as exc:
-        raise HTTPException(status_code=500, detail=f"ভিডিওর duration পড়া যায়নি: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"Could not read the video duration: {exc}") from exc
 
     try:
         trim_duration = validate_trim_range(payload.start_seconds, payload.end_seconds, video_duration)
@@ -830,11 +830,11 @@ def trim_video(job_id: str, payload: TrimRequest) -> dict[str, Any]:
             "-movflags", "+faststart", temporary_output.name,
         ], cwd=job_dir)
         if not temporary_output.exists() or temporary_output.stat().st_size == 0:
-            raise RuntimeError("FFmpeg trimmed MP4 তৈরি করতে পারেনি।")
+            raise RuntimeError("FFmpeg could not create the trimmed MP4.")
         temporary_output.replace(trimmed_output)
     except RuntimeError as exc:
         temporary_output.unlink(missing_ok=True)
-        raise HTTPException(status_code=500, detail=f"ভিডিও trim করা যায়নি: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"Could not trim the video: {exc}") from exc
 
     update_job(
         job_id,
@@ -856,7 +856,7 @@ def trim_video(job_id: str, payload: TrimRequest) -> dict[str, Any]:
 def output_file(job_id: str, kind: str) -> tuple[Path, str, str]:
     job = get_job(job_id)
     if job.get("status") != "completed":
-        raise HTTPException(status_code=409, detail="কাজটি এখনো সম্পন্ন হয়নি।")
+        raise HTTPException(status_code=409, detail="The job has not completed yet.")
     job_dir = Path(job["job_dir"])
     choices = {
         "video": ("captioned_video.mp4", "video/mp4", "captioned_video.mp4"),
@@ -883,11 +883,11 @@ def output_file(job_id: str, kind: str) -> tuple[Path, str, str]:
         "translation-json": ("translation.json", "application/json", "translation.json"),
     }
     if kind not in choices:
-        raise HTTPException(status_code=400, detail="kind: video, trimmed-video, srt, vtt, ass, ssa, sbv, txt, timecoded-txt, csv, tsv, xlsx, docx, md, html, json, insights, all-exports, translated-srt, translated-vtt, bilingual-srt বা translation-json হতে পারে।")
+        raise HTTPException(status_code=400, detail="kind: video, trimmed-video, srt, vtt, ass, ssa, sbv, txt, timecoded-txt, csv, tsv, xlsx, docx, md, html, json, insights, all-exports, translated-srt, translated-vtt, bilingual-srt or translation-json.")
     filename, media_type, download_name = choices[kind]
     path = job_dir / filename
     if not path.exists():
-        raise HTTPException(status_code=404, detail="ফাইলটি পাওয়া যায়নি।")
+        raise HTTPException(status_code=404, detail="The requested file was not found.")
     return path, media_type, download_name
 
 
@@ -907,7 +907,7 @@ def download_output(job_id: str, kind: str = "video") -> FileResponse:
 def delete_job(job_id: str) -> dict[str, Any]:
     job = get_job(job_id)
     if job.get("status") in {"processing", "rendering", "queued"}:
-        raise HTTPException(status_code=409, detail="চলমান job delete করা যাবে না।")
+        raise HTTPException(status_code=409, detail="A running job cannot be deleted.")
     shutil.rmtree(Path(job["job_dir"]), ignore_errors=False)
     with jobs_lock:
         jobs.pop(job_id, None)

@@ -22,3 +22,10 @@ If you launch the portable EXE directly, first run backend/start_backend.bat and
 See Product Vision for the design direction. Start with Bangla instructions (README_BN.md) or the English guide (README_EN.md).
 
 Backend: Python 3.11/3.12, FastAPI, Faster-Whisper, FFmpeg. Client: Flutter 3.38+, Android and Windows.
+
+
+## Subtitle output language and typeface
+
+The Create workflow separates **Recognition language** (the spoken audio) from **Subtitle output language** (the language rendered into the video and subtitle files). Choose **Same as spoken language** to keep the original transcript, or choose another language to translate the cues before the video and SRT/VTT exports are rendered. Translation requires the corresponding Argos offline language pair to be installed; otherwise the job reports the missing pair rather than silently producing the wrong language.
+
+The caption font selector offers Segoe UI, Arial, Nirmala UI, Verdana, Georgia, Impact, Tahoma and Trebuchet MS. The selected font is embedded in the ASS subtitle style used to burn captions into the MP4 and is retained when the transcript is edited and re-rendered. The app interface uses an English-first Segoe UI/Roboto system typeface and animated page-title, headline and processing-stage transitions.
