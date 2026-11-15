@@ -26,6 +26,7 @@ class CaptionApp extends StatelessWidget {
       title: 'AI Auto Subtitle Generator',
       theme: ThemeData(
         useMaterial3: true,
+        fontFamily: Platform.isWindows ? 'Segoe UI' : 'Roboto',
         colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark).copyWith(
           primary: const Color(0xFF9B8CFF),
           secondary: const Color(0xFF56D8D0),
@@ -146,6 +147,27 @@ class _HeroFeature extends StatelessWidget {
   ]);
 }
 
+
+class _AnimatedTextReveal extends StatelessWidget {
+  const _AnimatedTextReveal({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+    tween: Tween<double>(begin: 0, end: 1),
+    duration: const Duration(milliseconds: 720),
+    curve: Curves.easeOutCubic,
+    child: child,
+    builder: (context, value, child) => Opacity(
+      opacity: value,
+      child: Transform.translate(
+        offset: Offset(0, (1 - value) * 14),
+        child: child,
+      ),
+    ),
+  );
+}
+
 class CaptionHomePage extends StatefulWidget {
   const CaptionHomePage({super.key});
 
@@ -157,6 +179,9 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   PlatformFile? _selectedFile;
   int? _selectedFileSize;
   String _language = 'auto';
+  String _subtitleLanguage = 'same';
+  String _subtitleOutputLanguage = 'same';
+  String _captionFont = 'Segoe UI';
   List<Map<String, String>> _availableLanguages = const [
     {'code': 'auto', 'name': 'Auto detect'},
   ];
@@ -169,9 +194,9 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   String? _translationTarget;
   bool _busy = false;
   bool _serverOkay = false;
-  String _serverStatusText = 'সার্ভার পরীক্ষা করা হয়নি। Test চাপো।';
+  String _serverStatusText = 'Engine has not been checked yet. Select Check connection.';
   double _progress = 0;
-  String _stage = 'প্রথমে PC-এর AI সার্ভার চালু করো।';
+  String _stage = 'The AI engine is starting. Please wait.';
   String? _jobId;
   String? _error;
   String? _detectedLanguage;
@@ -227,16 +252,16 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
         if (mounted) {
           setState(() {
             _serverOkay = false;
-            _serverStatusText = 'এই build-এ bundled backend পাওয়া যায়নি। Official full Windows installer/ZIP ব্যবহার করো।';
-            _stage = 'Backend runtime পাওয়া যায়নি';
+            _serverStatusText = 'Bundled AI engine was not found in this build. Use the official self-contained Windows package.';
+            _stage = 'AI engine runtime not found';
           });
         }
         return;
       }
       if (mounted) {
         setState(() {
-          _stage = 'প্রথমবারের মতো local AI Backend চালু হচ্ছে...';
-          _serverStatusText = 'Bundled Backend starting • কিছুক্ষণ অপেক্ষা করো';
+          _stage = 'Starting the local AI engine for the first time...';
+          _serverStatusText = 'Starting the bundled engine • please wait';
         });
       }
       final runtimeDirectory = '${appDirectory.path}${separator}backend_runtime';
@@ -253,7 +278,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
         if (!mounted) return;
         if (await _healthReady()) {
           await _checkServer();
-          if (mounted) setState(() => _stage = 'Local Backend স্বয়ংক্রিয়ভাবে প্রস্তুত।');
+          if (mounted) setState(() => _stage = 'Local AI engine is ready.');
           return;
         }
         await Future<void>.delayed(const Duration(seconds: 1));
@@ -261,7 +286,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       if (mounted) {
         setState(() {
           _serverOkay = false;
-          _serverStatusText = 'Bundled Backend চালু হতে সময় বেশি লাগছে। App বন্ধ করে আবার চালু করো।';
+          _serverStatusText = 'The bundled engine is taking longer than expected. Close and reopen the app.';
           _stage = 'Backend startup timeout';
         });
       }
@@ -269,7 +294,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       if (mounted) {
         setState(() {
           _serverOkay = false;
-          _serverStatusText = 'Local Backend চালু করা যায়নি: ${_friendlyError(e)}';
+          _serverStatusText = 'Could not start the local AI engine: ${_friendlyError(e)}';
         });
       }
     } finally {
@@ -291,14 +316,14 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   Future<void> _checkServer() async {
     try {
       final response = await http.get(_uri('/health')).timeout(const Duration(seconds: 8));
-      if (response.statusCode != 200) throw Exception('সার্ভার উত্তর দেয়নি (${response.statusCode})');
+      if (response.statusCode != 200) throw Exception('The service did not respond (${response.statusCode})');
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final ffmpegReady = data['ffmpeg_ready'] == true;
       final assReady = data['ass_filter_ready'] == true;
       final ready = ffmpegReady && assReady;
       final languageResponse = await http.get(_uri('/languages')).timeout(const Duration(seconds: 8));
       if (languageResponse.statusCode != 200) {
-        throw Exception('সমর্থিত ভাষার তালিকা পাওয়া যায়নি (${languageResponse.statusCode})');
+        throw Exception('The supported language list could not be loaded (${languageResponse.statusCode})');
       }
       final languageData = _decodeJson(languageResponse.body);
       final rawLanguages = languageData['languages'] as List<dynamic>? ?? const [];
@@ -318,17 +343,20 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
         _serverOkay = ready;
         _availableLanguages = available;
         if (!available.any((item) => item['code'] == _language)) _language = 'auto';
+        if (_subtitleLanguage != 'same' && !available.any((item) => item['code'] == _subtitleLanguage)) {
+          _subtitleLanguage = 'same';
+        }
         _serverStatusText = !ffmpegReady
-            ? 'FFmpeg/FFprobe পাওয়া যায়নি। install_backend নির্দেশনা দেখো।'
+            ? 'FFmpeg/FFprobe are unavailable. Check the bundled media runtime.'
             : !assReady
-                ? 'FFmpeg-এ ASS/libass subtitle filter নেই। Full FFmpeg build install করো।'
-                : 'Server ready • ${languageData['count'] ?? available.length - 1}টি ভাষা উপলব্ধ।';
+                ? 'The FFmpeg ASS/libass subtitle renderer is unavailable.'
+                : 'Engine ready • ${languageData['count'] ?? available.length - 1} languages available.';
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _serverOkay = false;
-        _serverStatusText = 'সার্ভারে সংযোগ হয়নি: ${_friendlyError(e)}';
+        _serverStatusText = 'Could not connect to the service: ${_friendlyError(e)}';
       });
     }
   }
@@ -339,7 +367,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       final file = await FilePicker.pickFile(type: FileType.video);
       if (file == null) return;
       if (file.path == null) {
-        throw Exception('এই ভিডিওটির লোকাল path পাওয়া যায়নি। Files অ্যাপ থেকে আবার নির্বাচন করো।');
+        throw Exception('The local video path is unavailable. Select the video again from your device.');
       }
       final selectedSize = file.lengthSync() ?? (await file.length()) ?? 0;
       if (!mounted) return;
@@ -351,7 +379,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
         _progress = 0;
         _transcriptPreview = null;
         _detectedLanguage = null;
-        _stage = 'ভিডিও নির্বাচন করা হয়েছে।';
+        _stage = 'Video selected.';
       });
       await _disposePreview();
     } catch (e) {
@@ -377,13 +405,13 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
   Future<void> _createCaptions() async {
     final picked = _selectedFile;
     if (picked == null || picked.path == null) {
-      _showError('আগে একটি ভিডিও নির্বাচন করো।');
+      _showError('Select a video first.');
       return;
     }
     setState(() {
       _busy = true;
       _progress = 0.01;
-      _stage = 'AI Backend সংযোগ পরীক্ষা হচ্ছে...';
+      _stage = 'Checking the AI engine connection...';
       _error = null;
       _jobId = null;
       _transcriptPreview = null;
@@ -399,27 +427,29 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       // Never upload a large video until the local FastAPI server and FFmpeg are ready.
       final healthResponse = await http.get(_uri('/health')).timeout(const Duration(seconds: 10));
       if (healthResponse.statusCode != 200) {
-        throw Exception('Backend health check ব্যর্থ হয়েছে (${healthResponse.statusCode})।');
+        throw Exception('AI engine health check failed (${healthResponse.statusCode})।');
       }
       final health = _decodeJson(healthResponse.body);
       if (health['ok'] != true) {
-        throw Exception('Backend service প্রস্তুত নয়। start_backend.bat চালু আছে কি না দেখো।');
+        throw Exception('The AI engine is not ready. Restart the app and check the bundled engine.');
       }
       if (health['ffmpeg_ready'] != true) {
-        throw Exception('FFmpeg অথবা FFprobe পাওয়া যায়নি। FFmpeg install করে নতুন Terminal থেকে start_backend.bat চালাও।');
+        throw Exception('FFmpeg or FFprobe is unavailable. Check the bundled media runtime and restart the app.');
       }
       if (health['ass_filter_ready'] != true) {
-        throw Exception('FFmpeg-এ ASS/libass subtitle renderer পাওয়া যায়নি। Gyan Shared FFmpeg install করে Backend restart করো।');
+        throw Exception('The ASS/libass subtitle renderer is unavailable. Use a full FFmpeg build with ASS support.');
       }
       if (!mounted) return;
       setState(() {
         _serverOkay = true;
-        _serverStatusText = 'Server ready • FFmpeg ও subtitle renderer প্রস্তুত।';
+        _serverStatusText = 'Engine ready • FFmpeg and subtitle renderer are available.';
         _progress = 0.02;
-        _stage = 'ভিডিও সার্ভারে আপলোড হচ্ছে...';
+        _stage = 'Uploading video to the local engine...';
       });
       final request = http.MultipartRequest('POST', _uri('/jobs'));
       request.fields['language'] = _language;
+      request.fields['target_language'] = _subtitleLanguage;
+      request.fields['font_family'] = _captionFont;
       request.fields['model_size'] = _model;
       request.fields['style'] = _style;
       request.fields['hotwords'] = _hotwordsController.text.trim();
@@ -431,10 +461,10 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       final body = await streamed.stream.bytesToString();
       final data = _decodeJson(body);
       if (streamed.statusCode != 202) {
-        throw Exception(_detailFrom(data, 'ভিডিও আপলোড করা যায়নি (${streamed.statusCode})'));
+        throw Exception(_detailFrom(data, 'Video upload failed (${streamed.statusCode})'));
       }
       final id = data['job_id']?.toString();
-      if (id == null || id.isEmpty) throw Exception('সার্ভার job ID দেয়নি।');
+      if (id == null || id.isEmpty) throw Exception('The service did not return a job ID.');
       if (mounted) setState(() => _jobId = id);
       await _pollJob(id);
     } catch (e) {
@@ -448,7 +478,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
           }
           _error = message;
           _progress = 0;
-          _stage = connectionFailure ? 'Backend সংযোগ পাওয়া যায়নি' : 'প্রসেসিং ব্যর্থ হয়েছে';
+          _stage = connectionFailure ? 'AI engine connection unavailable' : 'Processing failed';
         });
       }
     } finally {
@@ -477,15 +507,16 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       final response = await http.get(_uri('/jobs/$id')).timeout(const Duration(seconds: 30));
       final data = _decodeJson(response.body);
       if (response.statusCode != 200) {
-        throw Exception(_detailFrom(data, 'Job status পাওয়া যায়নি (${response.statusCode})'));
+        throw Exception(_detailFrom(data, 'Job status is unavailable (${response.statusCode})'));
       }
       final status = data['status']?.toString() ?? 'processing';
       final progress = (data['progress'] as num?)?.toDouble() ?? 0;
       if (mounted) {
         setState(() {
           _progress = progress.clamp(0, 100) / 100;
-          _stage = data['stage']?.toString() ?? 'প্রসেসিং চলছে...';
+          _stage = data['stage']?.toString() ?? 'Processing...';
           _detectedLanguage = data['detected_language']?.toString();
+          _subtitleOutputLanguage = data['subtitle_language']?.toString() ?? _subtitleOutputLanguage;
           _transcriptPreview = data['transcript_preview']?.toString();
         });
       }
@@ -505,14 +536,14 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
           setState(() {
             _progress = 1;
             _stage = _videoController != null
-                ? 'সাবটাইটেলসহ ভিডিও তৈরি সম্পন্ন!'
-                : 'ভিডিও তৈরি হয়েছে। Preview না খুললেও Save করা যাবে।';
+                ? 'Your captioned video is ready!'
+                : 'Your video is ready. You can save it even if the preview is unavailable.';
           });
         }
         return;
       }
       if (status == 'failed') {
-        throw Exception(data['error']?.toString() ?? 'AI প্রসেসিং ব্যর্থ হয়েছে।');
+        throw Exception(data['error']?.toString() ?? 'AI Processing failed।');
       }
       await Future<void>.delayed(const Duration(seconds: 1));
     }
@@ -562,12 +593,12 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     final id = _jobId;
     if (id == null || _trimBusy || _videoDurationSeconds <= 0) return;
     if (_trimEndSeconds - _trimStartSeconds < 0.25) {
-      _showError('কমপক্ষে 0.25 সেকেন্ডের অংশ নির্বাচন করো।');
+      _showError('Select a segment of at least 0.25 seconds.');
       return;
     }
     setState(() {
       _trimBusy = true;
-      _stage = 'নির্বাচিত অংশ FFmpeg দিয়ে render হচ্ছে...';
+      _stage = 'Rendering the selected segment...';
       _error = null;
     });
     try {
@@ -581,27 +612,27 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       ).timeout(const Duration(hours: 3));
       final data = _decodeJson(response.body);
       if (response.statusCode != 201) {
-        throw Exception(_detailFrom(data, 'ভিডিও trim করা যায়নি (${response.statusCode})'));
+        throw Exception(_detailFrom(data, 'Could not trim the video (${response.statusCode})'));
       }
       if (!mounted) return;
       setState(() {
         _trimmedVideoReady = true;
-        _stage = 'Trimmed MP4 তৈরি হয়েছে।';
+        _stage = 'Trimmed MP4 is ready.';
       });
       try {
         await _loadPreview(id, kind: 'trimmed-video');
       } catch (_) {
         if (mounted) {
-          setState(() => _stage = 'Trimmed MP4 তৈরি হয়েছে; preview খোলা যায়নি। Download করা যাবে।');
+          setState(() => _stage = 'Trimmed MP4 is ready. Preview is unavailable, but the file can be downloaded.');
         }
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Trimmed MP4 তৈরি হয়েছে। এখন Download করতে পারো।')),
+          const SnackBar(content: Text('Trimmed MP4 is ready. এখন Download করতে পারো।')),
         );
       }
     } catch (e) {
-      _showError('Trim ব্যর্থ হয়েছে: ${_friendlyError(e)}');
+      _showError('Trim failed: ${_friendlyError(e)}');
     } finally {
       if (mounted) setState(() => _trimBusy = false);
     }
@@ -613,7 +644,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     try {
       await _loadPreview(id, kind: 'video');
     } catch (e) {
-      _showError('Original preview খোলা যায়নি: ${_friendlyError(e)}');
+      _showError('Could not open the original preview: ${_friendlyError(e)}');
     }
   }
 
@@ -622,7 +653,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     try {
       final request = await client.getUrl(Uri.parse(url)).timeout(const Duration(seconds: 30));
       final response = await request.close().timeout(const Duration(hours: 3));
-      if (response.statusCode != 200) throw Exception('ফাইল ডাউনলোড করা যায়নি (${response.statusCode})');
+      if (response.statusCode != 200) throw Exception('Could not download the file (${response.statusCode})');
       final file = File('${Directory.systemTemp.path}/ai_caption_${DateTime.now().millisecondsSinceEpoch}.$extension');
       await response.pipe(file.openWrite());
       return file;
@@ -636,7 +667,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     if (id == null) return;
     File? tempFile;
     try {
-      setState(() => _stage = 'ভিডিও সেভ করা হচ্ছে...');
+      setState(() => _stage = 'Saving video...');
       final kind = _trimmedVideoReady ? 'trimmed-video' : 'video';
       tempFile = await _downloadToTemp(_uri('/jobs/$id/download?kind=$kind').toString(), 'mp4');
       final name = 'AI_Captioned_${DateTime.now().millisecondsSinceEpoch}';
@@ -656,9 +687,9 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
           mimeType: MimeType.mp4Video,
         );
       }
-      if (mounted) setState(() => _stage = 'ভিডিও সেভ করা হয়েছে।');
+      if (mounted) setState(() => _stage = 'Video saved.');
     } catch (e) {
-      _showError('ভিডিও সেভ করা যায়নি: ${_friendlyError(e)}');
+      _showError('Could not save video: ${_friendlyError(e)}');
     } finally {
       if (tempFile != null) {
         try {
@@ -673,7 +704,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     if (id == null) return;
     try {
       final response = await http.get(_uri('/jobs/$id/download?kind=$kind')).timeout(const Duration(minutes: 2));
-      if (response.statusCode != 200) throw Exception('$kind ফাইল পাওয়া যায়নি।');
+      if (response.statusCode != 200) throw Exception('$kind File not found.');
       await FileSaver.instance.saveToDownloads(
         name: '${kind}_${DateTime.now().millisecondsSinceEpoch}',
         bytes: response.bodyBytes,
@@ -682,9 +713,9 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
         customMimeType: _exportCustomMimeType(kind),
         subfolder: 'AI Captions',
       );
-      if (mounted) setState(() => _stage = '$kind export সেভ হয়েছে.');
+      if (mounted) setState(() => _stage = '$kind export saved.');
     } catch (e) {
-      _showError('$kind export সেভ করা যায়নি: ${_friendlyError(e)}');
+      _showError('$kind Could not save export: ${_friendlyError(e)}');
     }
   }
 
@@ -749,7 +780,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     try {
       optionsResponse = await http.get(_uri('/jobs/$id/translation-options')).timeout(const Duration(seconds: 30));
     } catch (e) {
-      _showError('Translation options পাওয়া যায়নি: ${_friendlyError(e)}');
+      _showError('Could not load translation options: ${_friendlyError(e)}');
       return;
     }
     if (!mounted) return;
@@ -768,9 +799,9 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('Offline translation model install করো'),
-          content: Text('এই PC-তে $sourceCode থেকে অন্য ভাষায় যাওয়ার কোনো offline translation path পাওয়া যায়নি। Backend-এর install_translation_model.bat চালাও।\n\nউদাহরণ: install_translation_model.bat $sourceCode bn\n\nসব Whisper ভাষার translation model পাওয়া যায় না; install করার পর Server Test চাপো।'),
-          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('ঠিক আছে'))],
+          title: const Text('Install an offline translation model'),
+          content: Text('No offline translation path is installed from $sourceCode to another language. Install the matching Argos language pair, then restart the AI engine.\n\nExample: install_translation_model.bat $sourceCode bn\n\nNot every Whisper language pair is available offline.'),
+          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('OK'))],
         ),
       );
       return;
@@ -796,7 +827,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
               onChanged: (value) => dialogSetState(() => selected = value ?? selected),
             ),
             const SizedBox(height: 8),
-            const Text('শুধু install করা translation model দিয়ে কাজ হবে; video cloud-এ পাঠানো হবে না।',
+            const Text('Translation requires an installed offline language model. Your video is not sent to the cloud.',
                 style: TextStyle(fontSize: 11, color: Colors.white60)),
           ]),
           actions: [
@@ -809,7 +840,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     if (target == null) return;
     setState(() {
       _busy = true;
-      _stage = 'Offline translation হচ্ছে...';
+      _stage = 'Translating subtitles offline...';
       _error = null;
     });
     try {
@@ -820,12 +851,12 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       ).timeout(const Duration(hours: 2));
       final result = _decodeJson(response.body);
       if (response.statusCode != 201) {
-        throw Exception(_detailFrom(result, 'Offline translation ব্যর্থ হয়েছে।'));
+        throw Exception(_detailFrom(result, 'Offline subtitle translation failed.'));
       }
       if (mounted) {
         setState(() {
           _translationTarget = target;
-          _stage = 'Offline translation সম্পন্ন: ${options['source_language']} → $target';
+          _stage = 'Offline translation complete: ${options['source_language']} → $target';
         });
       }
     } catch (e) {
@@ -842,7 +873,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       final response = await http.get(_uri('/jobs/$id/transcript')).timeout(const Duration(seconds: 30));
       final data = _decodeJson(response.body);
       if (response.statusCode != 200) {
-        throw Exception(_detailFrom(data, 'Transcript পাওয়া যায়নি।'));
+        throw Exception(_detailFrom(data, 'Transcript not found.'));
       }
       final segments = data['segments'] as List<dynamic>? ?? const [];
       final controller = TextEditingController(
@@ -859,7 +890,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
           content: SizedBox(
             width: 620,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Text('প্রতিটি লাইনের text ঠিক করো। নতুন line যোগ/বাদ দিও না—প্রতিটি line-এর timing সংরক্ষিত থাকবে।',
+              const Text('Edit the text on each line. Do not add or remove lines; the original timings will be preserved.',
                   style: TextStyle(fontSize: 12, color: Colors.white70)),
               const SizedBox(height: 12),
               Flexible(
@@ -869,7 +900,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
                   minLines: 8,
                   maxLines: 18,
                   keyboardType: TextInputType.multiline,
-                  decoration: const InputDecoration(hintText: 'প্রতি subtitle segment আলাদা লাইনে'),
+                  decoration: const InputDecoration(hintText: 'One subtitle segment per line'),
                 ),
               ),
             ]),
@@ -886,7 +917,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       setState(() {
         _busy = true;
         _progress = 0.76;
-        _stage = 'Edited transcript পাঠানো হচ্ছে...';
+        _stage = 'Saving the edited transcript...';
         _error = null;
       });
       await _disposePreview();
@@ -898,18 +929,19 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
           'style': _style,
           'words_per_line': _wordsPerLine,
           'position': _position,
+          'font_family': _captionFont,
         }),
       ).timeout(const Duration(minutes: 2));
       final updateData = _decodeJson(update.body);
       if (update.statusCode != 202) {
-        throw Exception(_detailFrom(updateData, 'Transcript update ব্যর্থ হয়েছে।'));
+        throw Exception(_detailFrom(updateData, 'Transcript update failed.'));
       }
       await _pollJob(id);
     } catch (e) {
       if (mounted) {
         setState(() {
           _error = _friendlyError(e);
-          _stage = 'Transcript edit ব্যর্থ হয়েছে';
+          _stage = 'Transcript edit failed';
         });
       }
     } finally {
@@ -1174,12 +1206,25 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Flexible(
-            child: Text(
-              _currentPageTitle,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: desktop ? 22 : 17, fontWeight: FontWeight.w900, letterSpacing: -0.65),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 420),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(begin: const Offset(0, 0.16), end: Offset.zero).animate(animation),
+                  child: child,
+                ),
+              ),
+              child: Text(
+                _currentPageTitle,
+                key: ValueKey(_currentPageTitle),
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: desktop ? 22 : 17, fontWeight: FontWeight.w900, letterSpacing: -0.65),
+              ),
             ),
           ),
           if (desktop) ...[
@@ -1271,7 +1316,9 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _eyebrow('Your creative workspace'),
             const SizedBox(height: 7),
-            Text('Create something remarkable.', style: TextStyle(fontSize: wide ? 30 : 23, fontWeight: FontWeight.w900, letterSpacing: -1.0, height: 1.13)),
+            _AnimatedTextReveal(
+              child: Text('Create something remarkable.', style: TextStyle(fontSize: wide ? 30 : 23, fontWeight: FontWeight.w900, letterSpacing: -1.0, height: 1.13)),
+            ),
             const SizedBox(height: 5),
             const Text('Everything you need to caption, polish and export your videos.', style: TextStyle(fontSize: 12, color: Color(0xFF8D9BB2))),
           ])),
@@ -1695,6 +1742,26 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       onSelected: _busy ? null : (value) => setState(() => _language = value ?? 'auto'),
     ),
     const SizedBox(height: 16),
+    const SizedBox(height: 16),
+    _fieldGroupLabel('SUBTITLE OUTPUT LANGUAGE', 'Choose the language your finished subtitles and burned-in captions should use.'),
+    _dropdown<String>(
+      label: 'Subtitle language',
+      value: _subtitleLanguage,
+      values: [
+        const DropdownMenuItem(value: 'same', child: Text('Same as spoken language')),
+        ..._availableLanguages.where((item) => item['code'] != 'auto').map((item) => DropdownMenuItem(
+          value: item['code']!,
+          child: Text('${item['name']} (${item['code']})'),
+        )),
+      ],
+      onChanged: (value) { if (!_busy) setState(() => _subtitleLanguage = value ?? 'same'); },
+    ),
+    const SizedBox(height: 7),
+    const Text(
+      'Translated output requires the matching offline language model to be installed. The original spoken language is detected separately.',
+      style: TextStyle(fontSize: 9, color: Color(0xFF8798B1), height: 1.45),
+    ),
+    const SizedBox(height: 17),
     _fieldGroupLabel('TRANSCRIPTION ENGINE', 'Choose the balance between speed and accuracy.'),
     _dropdown<String>(label: 'Whisper model', value: _model, values: const [
       DropdownMenuItem(value: 'tiny', child: Text('Tiny  •  Fastest')),
@@ -1715,6 +1782,23 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
         SizedBox(width: width, child: _captionStyleCard('minimal', 'Minimal', 'White captions', const Color(0xFFE1E8F2), Icons.notes_rounded)),
       ]);
     }),
+    const SizedBox(height: 17),
+    _fieldGroupLabel('CAPTION FONT DESIGN', 'Choose the typeface used in your video and subtitle exports.'),
+    _dropdown<String>(
+      label: 'Caption font family',
+      value: _captionFont,
+      values: const [
+        DropdownMenuItem(value: 'Segoe UI', child: Text('Segoe UI  •  Modern')),
+        DropdownMenuItem(value: 'Arial', child: Text('Arial  •  Clean')),
+        DropdownMenuItem(value: 'Nirmala UI', child: Text('Nirmala UI  •  Indic scripts')),
+        DropdownMenuItem(value: 'Verdana', child: Text('Verdana  •  Readable')),
+        DropdownMenuItem(value: 'Georgia', child: Text('Georgia  •  Editorial')),
+        DropdownMenuItem(value: 'Impact', child: Text('Impact  •  Bold')),
+        DropdownMenuItem(value: 'Tahoma', child: Text('Tahoma  •  Compact')),
+        DropdownMenuItem(value: 'Trebuchet MS', child: Text('Trebuchet MS  •  Friendly')),
+      ],
+      onChanged: (value) { if (!_busy) setState(() => _captionFont = value ?? 'Segoe UI'); },
+    ),
     const SizedBox(height: 17),
     _fieldGroupLabel('CREATOR VOCABULARY', 'Optional hints for names, brands and specialist terms.'),
     TextField(controller: _hotwordsController, enabled: !_busy, maxLength: 1000, decoration: const InputDecoration(
@@ -1823,7 +1907,17 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text('AI render pipeline', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
         const SizedBox(height: 3),
-        Text(_stage, style: const TextStyle(fontSize: 9, color: Color(0xFF92A1B9)), maxLines: 2, overflow: TextOverflow.ellipsis),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 320),
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(begin: const Offset(0, 0.12), end: Offset.zero).animate(animation),
+              child: child,
+            ),
+          ),
+          child: Text(_stage, key: ValueKey(_stage), style: const TextStyle(fontSize: 9, color: Color(0xFF92A1B9)), maxLines: 2, overflow: TextOverflow.ellipsis),
+        ),
       ])),
       const SizedBox(width: 8),
       _miniStatusPill(_error != null ? 'ATTENTION' : _busy ? 'PROCESSING' : 'COMPLETE', active: _error == null && !_busy && _jobId != null),
@@ -1848,8 +1942,9 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
     const SizedBox(height: 12),
     Wrap(spacing: 8, runSpacing: 8, children: [
       _metricChip('MODEL', _model.toUpperCase()),
-      _metricChip('LANGUAGE', _language == 'auto' ? 'AUTO' : _language.toUpperCase()),
-      if (_detectedLanguage != null) _metricChip('DETECTED', _detectedLanguage!.toUpperCase()),
+      _metricChip('SPOKEN', _detectedLanguage?.toUpperCase() ?? (_language == 'auto' ? 'AUTO' : _language.toUpperCase())),
+      _metricChip('SUBTITLES', _subtitleOutputLanguage == 'same' ? 'SAME AS SPOKEN' : _subtitleOutputLanguage.toUpperCase()),
+      _metricChip('FONT', _captionFont.toUpperCase()),
     ]),
     if (_error != null) ...[
       const SizedBox(height: 12),
@@ -1906,7 +2001,7 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       ]),
       const SizedBox(height: 15),
       if (duration <= 0.25)
-        const Text('ভিডিওর duration আসছে... Preview load হলে Timeline controls চালু হবে।', style: TextStyle(fontSize: 10, color: Color(0xFF91A1B8)))
+        const Text('Loading video duration... Timeline controls will be available when the preview loads.', style: TextStyle(fontSize: 10, color: Color(0xFF91A1B8)))
       else if (_previewKind == 'trimmed-video') ...[
         Container(
           padding: const EdgeInsets.all(12),
