@@ -1306,7 +1306,12 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _AnimatedTextReveal(child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: -0.35, color: Color(0xFFF0F3FA)))),
         const SizedBox(height: 5),
-        _AnimatedTextReveal(child: Text(subtitle, style: const TextStyle(fontSize: 10, color: Color(0xFF92A1B8, height: 1.45))),
+        _AnimatedTextReveal(
+          child: Text(
+            subtitle,
+            style: const TextStyle(fontSize: 10, color: Color(0xFF92A1B8), height: 1.45),
+          ),
+        ),
       ])),
       ?trailing,
     ],
