@@ -224,17 +224,21 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
       final separator = Platform.pathSeparator;
       final backendExe = '${appDirectory.path}${separator}backend_runtime${separator}ai_subtitle_backend.exe';
       if (!await File(backendExe).exists()) {
-        if (mounted) setState(() {
-          _serverOkay = false;
-          _serverStatusText = 'এই build-এ bundled backend পাওয়া যায়নি। Official full Windows installer/ZIP ব্যবহার করো।';
-          _stage = 'Backend runtime পাওয়া যায়নি';
-        });
+        if (mounted) {
+          setState(() {
+            _serverOkay = false;
+            _serverStatusText = 'এই build-এ bundled backend পাওয়া যায়নি। Official full Windows installer/ZIP ব্যবহার করো।';
+            _stage = 'Backend runtime পাওয়া যায়নি';
+          });
+        }
         return;
       }
-      if (mounted) setState(() {
-        _stage = 'প্রথমবারের মতো local AI Backend চালু হচ্ছে...';
-        _serverStatusText = 'Bundled Backend starting • কিছুক্ষণ অপেক্ষা করো';
-      });
+      if (mounted) {
+        setState(() {
+          _stage = 'প্রথমবারের মতো local AI Backend চালু হচ্ছে...';
+          _serverStatusText = 'Bundled Backend starting • কিছুক্ষণ অপেক্ষা করো';
+        });
+      }
       final runtimeDirectory = '${appDirectory.path}${separator}backend_runtime';
       final process = await Process.start(
         backendExe,
@@ -254,16 +258,20 @@ class _CaptionHomePageState extends State<CaptionHomePage> {
         }
         await Future<void>.delayed(const Duration(seconds: 1));
       }
-      if (mounted) setState(() {
-        _serverOkay = false;
-        _serverStatusText = 'Bundled Backend চালু হতে সময় বেশি লাগছে। App বন্ধ করে আবার চালু করো।';
-        _stage = 'Backend startup timeout';
-      });
+      if (mounted) {
+        setState(() {
+          _serverOkay = false;
+          _serverStatusText = 'Bundled Backend চালু হতে সময় বেশি লাগছে। App বন্ধ করে আবার চালু করো।';
+          _stage = 'Backend startup timeout';
+        });
+      }
     } catch (e) {
-      if (mounted) setState(() {
-        _serverOkay = false;
-        _serverStatusText = 'Local Backend চালু করা যায়নি: ${_friendlyError(e)}';
-      });
+      if (mounted) {
+        setState(() {
+          _serverOkay = false;
+          _serverStatusText = 'Local Backend চালু করা যায়নি: ${_friendlyError(e)}';
+        });
+      }
     } finally {
       _backendStarting = false;
     }
